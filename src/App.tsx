@@ -4,6 +4,11 @@ import { useClaims } from './hooks/useClaims'
 import { categories, type Category, type Claim } from './types/claim'
 import { CategoryIcon } from './components/CategoryIcon'
 import { ClaimCard, StatusBadge } from './components/ClaimCard'
+import { AuthHeader } from './auth/AuthHeader'
+import { AuthDialog } from './auth/AuthDialog'
+import { AuthStatus } from './auth/AuthStatus'
+import { MyClaimsAccess } from './auth/MyClaimsAccess'
+import type { AuthMode } from './auth/auth-validation'
 
 const sections = ['Mi barrio', 'Mis reclamos', 'Beneficios'] as const
 type Section = typeof sections[number]
@@ -11,6 +16,7 @@ const navIcons = [Compass, MessageSquare, Gift]
 
 export default function App() {
   const { claims, loading, error, retry } = useClaims()
+  const [authMode, setAuthMode] = useState<AuthMode | null>(null)
   const [section, setSection] = useState<Section>('Mi barrio')
   const [category, setCategory] = useState<Category | 'Todas'>('Todas')
   const [neighborhood, setNeighborhood] = useState('Todos los barrios')
@@ -32,11 +38,12 @@ export default function App() {
       <div className="shell header-inner">
         <a className="brand" href="#" onClick={event => { event.preventDefault(); setSection('Mi barrio') }} aria-label="ConectaRos, inicio"><span className="brand-icon"><Hexagon size={27} strokeWidth={1.8} /><span /></span>Conecta<span className="brand-light">Ros</span></a>
         <nav aria-label="Navegación principal">{sections.map((item, index) => { const Icon = navIcons[index]; return <button key={item} onClick={() => setSection(item)} className={`nav-item ${section === item ? 'active' : ''}`} aria-current={section === item ? 'page' : undefined}><Icon size={17} />{item}</button> })}</nav>
-        <span className="city-label"><MapPin size={15} /> Rosario, Santa Fe</span>
+        <AuthHeader onOpen={setAuthMode} />
       </div>
     </header>
 
     <main id="main" className="shell main-content">
+      <AuthStatus />
       {section === 'Mi barrio' ? <>
         <div className="breadcrumb"><span>Rosario</span><span>/</span> Mi barrio</div>
         <section className="hero" aria-labelledby="hero-title">
@@ -60,10 +67,11 @@ export default function App() {
           {!loading && !error && results.length === 0 && <div className="empty-state"><Search size={29} /><h3>{claims.length === 0 ? 'Todavía no hay reclamos visibles' : 'No hay coincidencias'}</h3><p>{claims.length === 0 ? 'La base no devolvió reclamos públicos. Si esperabas ejemplos, ejecutá el seed y comprobá RLS.' : 'Probá con otra búsqueda o explorá todos los ejemplos.'}</p><button className="primary-button" onClick={resetFilters}>Limpiar filtros</button></div>}
         </section>
         <aside className="community-note"><span className="community-icon"><Sprout size={27} /></span><div><h3>Tu mirada puede transformar tu cuadra.</h3><p>Este es el primer paso de ConectaRos. Por ahora, podés explorar cómo se verían los reclamos de tu ciudad.</p></div><span className="outline-pill">Estamos empezando <ArrowUpRight size={14} /></span></aside>
-      </> : <section className="future-section"><p className="eyebrow">CONECTAROS · DEMO</p><div className="future-icon">{section === 'Mis reclamos' ? <MessageSquare size={32} /> : <Gift size={32} />}</div><h1>{section}</h1><h2>{section === 'Mis reclamos' ? 'Tu espacio para hacer seguimiento' : 'Más conexiones con tu barrio'}</h2><p>{section === 'Mis reclamos' ? 'En una próxima etapa vas a poder iniciar sesión, crear reclamos y seguir su estado. Esta demo no tiene cuentas ni reclamos personales.' : 'Estamos dando forma a esta sección. Los beneficios, puntos y canjes todavía no están habilitados en esta pantalla.'}</p><span className="outline-pill">Próximamente</span><button className="primary-button" onClick={() => setSection('Mi barrio')}>Explorar la demo <ArrowRight size={17} /></button></section>}
+      </> : section === 'Mis reclamos' ? <MyClaimsAccess onOpen={setAuthMode} onExplore={() => setSection('Mi barrio')} /> : <section className="future-section"><p className="eyebrow">CONECTAROS · DEMO</p><div className="future-icon"><Gift size={32} /></div><h1>Beneficios</h1><h2>Más conexiones con tu barrio</h2><p>Estamos dando forma a esta sección. Los beneficios, puntos y canjes todavía no están habilitados en esta pantalla.</p><span className="outline-pill">Próximamente</span><button className="primary-button" onClick={() => setSection('Mi barrio')}>Explorar la demo <ArrowRight size={17} /></button></section>}
       <div className="demo-notice"><Info size={17} /><p><strong>Una idea en construcción.</strong> Esta demo no envía reclamos ni está conectada a la Municipalidad o a prestadores de servicios. No es un canal de atención ni de emergencias.</p></div>
     </main>
     <footer className="shell site-footer"><span className="footer-brand">ConectaRos <span>Hecho para conectar nuestra ciudad.</span></span><span>Rosario, Argentina <span className="dot">·</span> Demo inicial</span></footer>
+    {authMode && <AuthDialog key={authMode} mode={authMode} onClose={() => setAuthMode(null)} onSwitch={setAuthMode} />}
 
     <dialog ref={dialog} className="claim-dialog" aria-labelledby="detail-title" onClick={e => { if (e.target === e.currentTarget) dialog.current?.close() }}>
       {selected && <><div className="flex items-center justify-between"><span className="outline-pill">{selected.isDemo ? 'Reclamo ficticio' : 'Reclamo'} · {selected.id}</span><button className="close-button" aria-label="Cerrar detalle" onClick={() => dialog.current?.close()} autoFocus><X size={22} /></button></div><div className={`category-icon detail-icon ${selected.category}`}><CategoryIcon category={selected.category} size={27} /></div><p className="category-label">{selected.category}</p><h2 id="detail-title">{selected.title}</h2><p className="detail-address"><MapPin size={17} />{selected.address} · {selected.neighborhood}, Rosario</p><StatusBadge status={selected.status} workflowStatus={selected.workflowStatus} /><p className="detail-description">{selected.description}</p><div className="detail-disclaimer"><Info size={18} /><p>{selected.isDemo ? 'Datos ficticios del seed. El estado es ilustrativo y no indica una intervención real.' : 'Reclamo consultado desde Supabase. ConectaRos no confirma por sí mismo intervenciones de organismos.'}</p></div></>}

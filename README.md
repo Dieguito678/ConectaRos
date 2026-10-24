@@ -23,14 +23,15 @@ La interfaz inicia sin configuración, pero el listado muestra un error. **No ha
 - **Mi barrio:** consulta `claims` y categorías desde Supabase, solo con moderación aprobada. Incluye carga, error con reintento, lista vacía y filtros por categoría, barrio y grupo de estado. Las tarjetas muestran los siete estados reales; los filtros agrupan `publicado` como pendiente, `resuelto` como resuelto y los demás como en proceso.
 - Los contadores y barrios se calculan con la respuesta remota. Las categorías de navegación y la ilustración del barrio son locales. La ilustración no es un mapa real.
 - `src/data/claims.ts` queda como referencia histórica, **sin importaciones en la aplicación**. Los nueve ejemplos se insertan con `supabase/seed.sql` y se identifican con `is_demo`.
-- **Mis reclamos** y **Beneficios** siguen siendo pantallas informativas. No hay autenticación simulada. Publicación, fotos, Auth, puntos y canjes todavía no están conectados al frontend.
+- **Autenticación:** registro, confirmación por correo con PKCE, login/logout, restauración de sesión y lectura de perfil/roles propios. Requiere aplicar la nueva migración y configurar Auth según [la guía de autenticación](docs/auth-setup.md). No se crearon cuentas ni se enviaron correos de prueba; el recorrido real de Auth sigue pendiente de verificar con una cuenta elegida por vos.
+- **Mis reclamos** pide acceso sin sesión y muestra el módulo personal pendiente con sesión. **Beneficios** continúa informativo. No hay autenticación simulada. Publicación, fotos, puntos y canjes todavía no están conectados al frontend.
 - El SQL implementa roles, moderación, historial, derivaciones privadas, puntos, beneficios, canjes y Storage. Solo existirán remotamente después de aplicar las migraciones.
-- Verificación del 24/10/2026: variables locales presentes; la consulta REST recibió `404 / PGRST205` para `claims`. No se aplicó SQL ni seed remoto. **Todavía no se verificó el listado con datos remotos.**
+- Verificación más reciente del 24/10/2026: consulta REST **HTTP 200**, nueve reclamos reconocidos del seed y nueve categorías. El listado público remoto está verificado. El agente no aplicó migraciones remotas ni configuró Auth; la quinta migración para el nombre debe ejecutarse antes de probar el registro.
 
 ## Comprobaciones
 
 ```sh
-npm test                 # Contrato de lectura: error, vacío, sin fallback, mapeo y paginación
+npm test                 # 31 casos: Auth simulado, formularios, carreras de sesión y listado
 npm run test:db          # Migraciones, seed repetible, RLS, RPC y políticas Storage en PGlite
 npm run types:db         # Tipos de filas generados desde las migraciones locales
 npm run verify:supabase  # Consulta real usando .env.local, sin imprimir sus valores

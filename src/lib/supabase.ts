@@ -20,7 +20,17 @@ export function createSupabaseClient(): SupabaseClient | null {
   try {
     const parsed = new URL(url)
     if (!['http:', 'https:'].includes(parsed.protocol)) return null
-    client = createClient(url, key)
+    client = createClient(url, key, {
+      auth: {
+        flowType: 'pkce',
+        // AuthProvider exchanges the confirmation code exactly once after
+        // removing it from the URL. Avoid two consumers of the same callback.
+        detectSessionInUrl: false,
+        persistSession: true,
+        autoRefreshToken: true,
+        debug: false,
+      },
+    })
     return client
   } catch {
     return null

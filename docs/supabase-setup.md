@@ -2,7 +2,7 @@
 
 ## Estado comprobado
 
-El frontend consulta Supabase usando las variables de `.env.local`, revisadas sin imprimir sus valores. La lectura real del 24/10/2026 recibió HTTP `404`, código `PGRST205`: `claims` no está disponible en el esquema expuesto/cache de PostgREST. Esto no demuestra que todas las demás tablas estén ausentes.
+El frontend consulta Supabase usando las variables de `.env.local`, revisadas sin imprimir sus valores. La primera comprobación recibió `404 / PGRST205`. La comprobación posterior del 24/10/2026, durante la entrega de Auth, recibió **HTTP 200 con los nueve registros del seed y nueve categorías**. La lectura pública está verificada; el agente no aplicó las migraciones remotas. Para Auth, aplicá la nueva quinta migración y revisá [auth-setup.md](auth-setup.md).
 
 No se dispone de MCP de Supabase, CLI autenticada ni acceso administrativo. No se pudo inspeccionar el catálogo remoto, verificar propiedad administrativa, aplicar migraciones ni cargar el seed remoto. La clave pública no permite hacerlo. No se solicitaron contraseñas ni claves secretas.
 
@@ -30,7 +30,8 @@ from storage.buckets where id = 'claim-photos';
 | 2 | `supabase/migrations/20261024000200_policies.sql` | RLS y permisos por columna |
 | 3 | `supabase/migrations/20261024000300_transactional_functions.sql` | RPC autorizadas y transaccionales |
 | 4 | `supabase/migrations/20261024000400_storage.sql` | Bucket privado y controles de fotos |
-| 5 | `supabase/seed.sql` | Categorías y nueve reclamos ficticios |
+| 5 | `supabase/migrations/20261024000500_auth_profile_display_name.sql` | Nombre visible validado al crear el perfil Auth |
+| 6 | `supabase/seed.sql` | Categorías y nueve reclamos ficticios |
 
 Cada archivo es una transacción. Si queda una transacción abortada tras un error, ejecutá `rollback;` antes de investigar y reintentar ese archivo. SQL Editor no registra automáticamente el historial de la CLI: conservá un registro de archivos ejecutados. Antes de usar luego `supabase db push`, reconciliá el historial con `supabase migration repair` de acuerdo con lo realmente aplicado. Nunca ejecutes un reset remoto.
 
@@ -54,7 +55,7 @@ select count(*) from public.point_movements; -- el seed no crea movimientos
 
 ## Primer administrador
 
-Registrá primero una cuenta real mediante Supabase Auth o las herramientas de administración de Authentication del Dashboard. El frontend todavía no tiene login. No insertes contraseñas en `auth.users`.
+Registrá primero una cuenta real mediante el nuevo formulario de Supabase Auth o las herramientas de administración de Authentication del Dashboard. Aplicá antes la quinta migración y la configuración de [autenticación](auth-setup.md). No insertes contraseñas en `auth.users`.
 
 Tomá el UUID de Authentication → Users y verificá a quién corresponde. En SQL Editor reemplazá el placeholder y ejecutá desde el entorno confiable:
 
@@ -156,9 +157,9 @@ npm run types:db
 npm run build
 ```
 
-`test:db` ejecuta las cuatro migraciones, carga el seed dos veces y prueba RLS/RPC/Storage con PostgreSQL WASM (PGlite), roles reales de PostgreSQL e identidades de prueba. Los fixtures se revierten. Prueba privacidad, autoría, columnas sensibles, roles, comercios, premios únicos, límite de aportes, apoyos duplicados, transiciones, resolución, saldo/stock/vigencia, idempotencia, condiciones conservadas, uso único y fotos ocultas.
+`test:db` ejecuta las cinco migraciones, carga el seed dos veces y prueba RLS/RPC/Storage y el perfil Auth con PostgreSQL WASM (PGlite), roles reales de PostgreSQL e identidades de prueba. Los fixtures se revierten. Prueba privacidad, autoría, columnas sensibles, roles, comercios, premios únicos, límite de aportes, apoyos duplicados, transiciones, resolución, saldo/stock/vigencia, idempotencia, condiciones conservadas, uso único y fotos ocultas.
 
-Auth y Storage se representan con contratos mínimos en el runner: no se prueba su HTTP real, JWT, PostgREST ni cuentas remotas. Las siete pruebas del frontend usan respuestas controladas y verifican errores sin fallback, vacío, mapeo, filtro público y paginación. No equivalen a comprobar un listado remoto con filas.
+Auth y Storage se representan con contratos mínimos en el runner: no se prueba su HTTP real, JWT ni cuentas remotas. El frontend tiene 31 pruebas con respuestas controladas, incluyendo formularios, sesión y lectura pública. La lectura remota de los nueve reclamos se comprobó aparte por REST; el recorrido real de Auth sigue pendiente según [su guía](auth-setup.md).
 
 ### Concurrencia con dos conexiones
 
