@@ -6,6 +6,7 @@ import { createSubmission } from './submission'
 import { useObjectUrl } from './hooks'
 import { useAuth } from '../auth/AuthProvider'
 import { openModal } from '../lib/modal'
+import { ClaimStatusBadge } from '../components/ClaimStatusBadge'
 
 export function CreateClaimDialog({userId,repository,onClose,onSaved,onView}: {
   userId:string;repository:ClaimsRepository;onClose:()=>void;onSaved:(id:string)=>void;onView:(id:string)=>void
@@ -76,14 +77,14 @@ export function CreateClaimDialog({userId,repository,onClose,onSaved,onView}: {
   return <dialog ref={dialog} className="claim-dialog compose-dialog" aria-labelledby="compose-title" onCancel={event=>{event.preventDefault();requestClose()}}
     onClick={event=>{if(event.target===event.currentTarget)requestClose()}}>
     <div className="flex items-center justify-between"><span className="outline-pill">Tu barrio, tu voz</span><button className="close-button" disabled={busy} onClick={requestClose} aria-label="Cerrar creación de reclamo"><X size={22}/></button></div>
-    <h2 id="compose-title">{state.claimId?'Reclamo enviado para revisión':'Crear un reclamo'}</h2>
-    {discard?<div className="discard-prompt" role="alert"><h3>¿Cerrar este formulario?</h3><p>{state.claimId?'Tu reclamo seguirá guardado. Si cerrás, no podrás reintentar esta fotografía desde este formulario.':state.stage==='uncertain'?'Es posible que tu reclamo ya se haya enviado. Revisá Mis reclamos antes de crear otro.':'Se perderán los cambios y la fotografía seleccionada.'}</p><div className="auth-access-actions"><button autoFocus className="primary-button" onClick={()=>setDiscard(false)}>Seguir acá</button><button className="auth-login" onClick={onClose}>Cerrar formulario</button></div></div>:
-    state.claimId?<section className="submission-result"><CheckCircle2 size={32} aria-hidden="true"/><p role="status">Reclamo enviado para revisión</p><p>Todavía no aparece en el listado público.</p>
+    <h2 id="compose-title">{state.claimId?'Reclamo publicado':'Crear un reclamo'}</h2>
+    {discard?<div className="discard-prompt" role="alert"><h3>¿Cerrar este formulario?</h3><p>{state.claimId?'Tu reclamo seguirá publicado. Si cerrás, no podrás reintentar esta fotografía desde este formulario.':state.stage==='uncertain'?'Es posible que tu reclamo ya se haya publicado. Revisá Mis reclamos antes de crear otro.':'Se perderán los cambios y la fotografía seleccionada.'}</p><div className="auth-access-actions"><button autoFocus className="primary-button" onClick={()=>setDiscard(false)}>Seguir acá</button><button className="auth-login" onClick={onClose}>Cerrar formulario</button></div></div>:
+    state.claimId?<section className="submission-result"><CheckCircle2 size={32} aria-hidden="true"/><p role="status">Reclamo publicado</p><ClaimStatusBadge status="publicado" moderationStatus="aprobado"/><p>Ya podés encontrarlo en Mi barrio y seguirlo desde Mis reclamos.</p>
       {state.error&&<p role="alert">{/Supabase|migraci|RLS/i.test(state.error)?'No pudimos completar el envío en este momento. Intentá otra vez más tarde.':state.error}</p>}{state.stage==='uploading'&&<p role="status">Subiendo y registrando la fotografía…</p>}
       {state.stage==='photo_error'&&<button className="primary-button" onClick={()=>{void submission.submit(draft,file)}}>Reintentar solo la imagen</button>}
       {!busy&&<button className="auth-login" onClick={()=>onView(state.claimId!)}>Abrir en Mis reclamos</button>}
     </section>:<form ref={form} noValidate onSubmit={submit} aria-busy={busy}>
-      <p className="compose-notice">Contanos qué pasa en tu barrio. Revisamos cada reclamo antes de compartirlo con la comunidad.</p>
+      <p className="compose-notice">Tu reclamo se comparte con la comunidad al publicarlo. ConectaRos no reemplaza los canales oficiales de atención.</p>
       <p className="field-hint">No incluyas datos sensibles ni información privada de otras personas en el texto o la fotografía.</p>
       {categoryError&&<div role="alert" className="auth-message auth-message-error">No pudimos cargar las categorías.<button type="button" onClick={()=>setCategoryAttempt(a=>a+1)}>Reintentar categorías</button></div>}
       <fieldset disabled={locked}>
@@ -92,10 +93,10 @@ export function CreateClaimDialog({userId,repository,onClose,onSaved,onView}: {
         <DraftField name="description" label="Descripción" draft={draft} setDraft={setDraft} error={errors.description} multiline/>
         <DraftField name="address" label="Dirección o referencia" draft={draft} setDraft={setDraft} error={errors.address}/>
         <DraftField name="neighborhood" label="Barrio" draft={draft} setDraft={setDraft} error={errors.neighborhood}/>
-        <div className="auth-field photo-field"><label htmlFor="claim-photo"><Camera size={16} aria-hidden="true"/> Fotografía opcional</label><input id="claim-photo" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="claim-photo-hint" onChange={e=>{void selectPhoto(e.target.files?.[0])}}/><p id="claim-photo-hint" className="field-hint">Una imagen JPEG, PNG o WebP de hasta 5 MiB.</p>{checkingPhoto&&<p role="status">Comprobando imagen…</p>}{fileError&&<p className="field-error" role="alert">{fileError}</p>}{preview&&<img className="photo-preview" src={preview} alt="Vista previa de la fotografía seleccionada"/>}{(file||fileError)&&<button type="button" className="auth-login" onClick={()=>{photoCheck.current++;setFile(null);setFileError(null);setCheckingPhoto(false);const input=document.getElementById('claim-photo') as HTMLInputElement|null;if(input)input.value=''}}>Quitar fotografía</button>}</div>
+        <div className="auth-field photo-field"><label htmlFor="claim-photo"><Camera size={16} aria-hidden="true"/> Fotografía opcional</label><input id="claim-photo" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="claim-photo-hint" onChange={e=>{void selectPhoto(e.target.files?.[0])}}/><p id="claim-photo-hint" className="field-hint">Una imagen JPEG, PNG o WebP de hasta 5 MiB. Tu reclamo y la fotografía que adjuntes serán visibles para la comunidad.</p>{checkingPhoto&&<p role="status">Comprobando imagen…</p>}{fileError&&<p className="field-error" role="alert">{fileError}</p>}{preview&&<img className="photo-preview" src={preview} alt="Vista previa de la fotografía seleccionada"/>}{(file||fileError)&&<button type="button" className="auth-login" onClick={()=>{photoCheck.current++;setFile(null);setFileError(null);setCheckingPhoto(false);const input=document.getElementById('claim-photo') as HTMLInputElement|null;if(input)input.value=''}}>Quitar fotografía</button>}</div>
       </fieldset>
       {state.error&&<p className="auth-message auth-message-error" role="alert">{/Supabase|migraci|RLS/i.test(state.error)?'No pudimos completar el envío en este momento. Intentá otra vez más tarde.':state.error}</p>}
-      <button className="primary-button auth-submit" disabled={busy||checkingPhoto||loadingCategories||categoryError||!!fileError}>{busy?'Guardando reclamo…':state.stage==='uncertain'?'Comprobar y continuar':'Enviar para revisión'}</button>
+      <button className="primary-button auth-submit" disabled={busy||checkingPhoto||loadingCategories||categoryError||!!fileError}>{busy?'Guardando reclamo…':state.stage==='uncertain'?'Comprobar y continuar':'Publicar reclamo'}</button>
     </form>}
   </dialog>
 }

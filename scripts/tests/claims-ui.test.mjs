@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {JSDOM} from 'jsdom'
 import {createServer} from 'vite'
 import React from 'react'
-let dom,server,render,screen,fireEvent,waitFor,cleanup,act,within,AuthProvider,createAuthStore,CreateClaimDialog,MyClaims,App
+let dom,server,render,screen,fireEvent,waitFor,cleanup,act,within,AuthProvider,createAuthStore,CreateClaimDialog,MyClaims,App,toClaim
 before(async()=>{
   dom=new JSDOM('<!doctype html><body></body>',{url:'http://localhost:5173/'})
   for(const name of ['window','document','navigator','HTMLElement','HTMLInputElement','HTMLDialogElement','MutationObserver','FormData'])Object.defineProperty(globalThis,name,{value:dom.window[name],configurable:true,writable:true})
@@ -17,11 +17,13 @@ before(async()=>{
   ;({CreateClaimDialog}=await server.ssrLoadModule('/src/claims/CreateClaimDialog.tsx'))
   ;({MyClaims}=await server.ssrLoadModule('/src/claims/MyClaims.tsx'))
   ;({default:App}=await server.ssrLoadModule('/src/App.tsx'))
+  ;({toClaim}=await server.ssrLoadModule('/src/lib/claims.ts'))
 })
 afterEach(()=>cleanup())
 after(async()=>{await server?.close();dom?.window.close()})
 const category={id:'10000000-0000-4000-8000-000000000001',name:'Alumbrado',slug:'alumbrado'}
-const claim={id:'23000000-0000-4000-8000-000000000001',author_id:'A',title:'Reclamo propio A',description:'Descripción de prueba',address:'Prueba 123',neighborhood:'Centro',status:'publicado',moderation_status:'pendiente',is_demo:true,created_at:'2026-10-24T12:00:00Z',category}
+const claim={id:'23000000-0000-4000-8000-000000000001',author_id:'A',title:'Reclamo propio A',description:'Descripción de prueba',address:'Prueba 123',neighborhood:'Centro',status:'publicado',moderation_status:'aprobado',is_demo:true,created_at:'2026-10-24T12:00:00Z',category}
+const historicalPendingClaim={...claim,moderation_status:'pendiente'}
 function auth(initial='A') {
   let callback
   const session=id=>id?{user:{id}}:null
@@ -47,20 +49,23 @@ function fill(){
 }
 test('claim form has labels, validates without submission and focuses first error',async()=>{
   let sent=0;await compose(repo({submit:async()=>sent++}))
-  fireEvent.click(screen.getByRole('button',{name:'Enviar para revisión'}))
+  fireEvent.click(screen.getByRole('button',{name:'Publicar reclamo'}))
   assert.equal(screen.getByLabelText('Título').getAttribute('aria-invalid'),'true')
-  assert.equal(document.activeElement,screen.getByLabelText('Título'));assert.equal(sent,0)
+  assert.ok(document.activeElement===screen.getByLabelText('Título'),'validation focuses title');assert.equal(sent,0)
   assert.ok(screen.getByText(/No incluyas datos sensibles/))
+  assert.ok(screen.getByText(/Tu reclamo y la fotografía que adjuntes serán visibles para la comunidad/))
 })
-test('creation works in StrictMode, blocks double submit and reports pending review',async()=>{
+test('creation works in StrictMode, blocks double submit and reports a published claim with pending management',async()=>{
   let sent=0,release;const pending=new Promise(r=>release=r)
   const context=await compose(repo({submit:async(id)=>{sent++;await pending;return id}}),true)
-  fill();fireEvent.click(screen.getByRole('button',{name:'Enviar para revisión'}))
+  fill();fireEvent.click(screen.getByRole('button',{name:'Publicar reclamo'}))
   assert.equal(screen.getByRole('button',{name:'Guardando reclamo…'}).matches(':disabled'),true)
   fireEvent.submit(document.querySelector('form'));assert.equal(sent,1)
   await act(async()=>{release();await pending})
-  assert.ok(await screen.findByRole('heading',{name:'Reclamo enviado para revisión'}))
-  assert.ok(screen.getByText('Todavía no aparece en el listado público.'));assert.equal(context.saved,1)
+  assert.ok(await screen.findByRole('heading',{name:'Reclamo publicado'}))
+  assert.ok(screen.getByText('Ya podés encontrarlo en Mi barrio y seguirlo desde Mis reclamos.'));assert.equal(context.saved,1)
+  assert.ok(screen.getByText('Pendiente',{exact:true}).closest('.claim-status-badge')?.classList.contains('status-red'),'published claim has red pending management badge')
+  assert.equal(screen.queryByText('Todavía no aparece en el listado público.'),null)
 })
 test('dirty cancel asks for confirmation and keeps values until explicitly discarded',async()=>{
   const context=await compose();fill()
@@ -81,7 +86,7 @@ test('photo failure keeps saved claim, retries only photo and revokes preview UR
     const file=new File([new Uint8Array([255,216,255,0])],'original.jpg',{type:'image/jpeg'})
     fireEvent.change(screen.getByLabelText('Fotografía opcional'),{target:{files:[file]}})
     await screen.findByAltText('Vista previa de la fotografía seleccionada')
-    fireEvent.click(screen.getByRole('button',{name:'Enviar para revisión'}))
+    fireEvent.click(screen.getByRole('button',{name:'Publicar reclamo'}))
     assert.ok(await screen.findByRole('button',{name:'Reintentar solo la imagen'}))
     assert.equal(created,1);assert.equal(revoked,1)
     fireEvent.click(screen.getByRole('button',{name:'Reintentar solo la imagen'}))
@@ -110,7 +115,7 @@ test('own list clears account A on change/logout, ignoring late A responses',asy
   assert.ok(await screen.findByText('Reclamo propio B'))
   await act(async()=>{release({rows:[claim],more:false});await pending})
   assert.equal(screen.queryByText('Reclamo propio A'),null)
-  assert.ok(screen.getByText('En revisión',{exact:true}))
+  assert.ok(screen.getByText('Pendiente',{exact:true}).closest('.claim-status-badge')?.classList.contains('status-red'))
   await act(async()=>context.emit('SIGNED_OUT',null))
   assert.equal(screen.queryByText('Reclamo propio B'),null);assert.ok(screen.getByText('Ingresá para acceder a tu espacio'))
 })
@@ -146,7 +151,7 @@ test('own detail downloads photo, distinguishes moderation and clears image/data
   const oldCreate=URL.createObjectURL,oldRevoke=URL.revokeObjectURL
   URL.createObjectURL=()=> 'blob:own-photo';URL.revokeObjectURL=()=>revoked++
   try{
-    const repository=repo({list:async()=>({rows:[claim],more:false}),details:async()=>({claim,path:'private-path-not-for-UI',history:[],attachmentError:false,historyError:false}),photo:async()=>new Blob(['image'])})
+    const repository=repo({list:async()=>({rows:[historicalPendingClaim],more:false}),details:async()=>({claim:historicalPendingClaim,path:'private-path-not-for-UI',history:[],attachmentError:false,historyError:false}),photo:async()=>new Blob(['image'])})
     render(React.createElement(AuthProvider,{store:context.store},React.createElement(App,{claimsRepository:repository})))
     fireEvent.click(within(screen.getByRole('navigation',{name:'Navegación principal'})).getByRole('button',{name:'Mis reclamos'}))
     fireEvent.click(await screen.findByRole('button',{name:'Ver mi reclamo: Reclamo propio A'}))
@@ -157,4 +162,47 @@ test('own detail downloads photo, distinguishes moderation and clears image/data
     await waitFor(()=>assert.equal(screen.queryByAltText('Fotografía adjunta a tu reclamo'),null))
     assert.equal(screen.queryByText('Reclamo propio A'),null);assert.equal(revoked,1)
   }finally{URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke}
+})
+
+test('publishing reloads public and own queries from the same mock record, both showing red pending management',async()=>{
+  const context=auth(),remoteRows=[]
+  let publicReads=0,ownReads=0,submissions=0
+  const loadPublicClaims=async()=>{
+    publicReads++
+    return remoteRows.filter(row=>row.moderation_status==='aprobado').map(toClaim)
+  }
+  const repository=repo({
+    submit:async(id,draft,scope)=>{
+      submissions++
+      remoteRows.push({...claim,id,author_id:scope.userId,category_id:draft.categoryId,title:draft.title.trim(),description:draft.description.trim(),address:draft.address.trim(),neighborhood:draft.neighborhood.trim(),moderation_status:'aprobado',status:'publicado'})
+      return id
+    },
+    list:async(scope)=>{
+      ownReads++
+      return{rows:remoteRows.filter(row=>row.author_id===scope.userId),more:false}
+    },
+    getOwn:async(id,scope)=>remoteRows.find(row=>row.id===id&&row.author_id===scope.userId)??null,
+    details:async(id,scope)=>{
+      const current=remoteRows.find(row=>row.id===id&&row.author_id===scope.userId)
+      return current?{claim:current,path:null,history:[],attachmentError:false,historyError:false}:null
+    },
+  })
+  render(React.createElement(AuthProvider,{store:context.store},React.createElement(App,{claimsRepository:repository,loadPublicClaims})))
+  await waitFor(()=>assert.equal(screen.getAllByRole('button',{name:'Crear reclamo',exact:true})[0].disabled,false))
+  await waitFor(()=>assert.ok(publicReads>=1))
+  fireEvent.click(screen.getAllByRole('button',{name:'Crear reclamo',exact:true})[0])
+  await screen.findByRole('option',{name:'Alumbrado público'})
+  fill();fireEvent.click(screen.getByRole('button',{name:'Publicar reclamo'}))
+  assert.ok(await screen.findByRole('heading',{name:'Reclamo publicado'}))
+  await waitFor(()=>assert.ok(publicReads>=2,'saving re-fetches the public list'))
+  assert.equal(submissions,1);assert.equal(remoteRows.length,1)
+  assert.equal(remoteRows[0].moderation_status,'aprobado');assert.equal(remoteRows[0].status,'publicado')
+  fireEvent.click(screen.getByRole('button',{name:'Abrir en Mis reclamos'}))
+  fireEvent.click(await screen.findByRole('button',{name:'Cerrar detalle propio'}))
+  const ownCard=await screen.findByRole('button',{name:'Ver mi reclamo: Luminaria de prueba'})
+  assert.ok(within(ownCard).getByText('Pendiente',{exact:true}).closest('.claim-status-badge')?.classList.contains('status-red'))
+  assert.ok(ownReads>=1,'own claims are read from the mock repository, not appended locally')
+  fireEvent.click(within(screen.getByRole('navigation',{name:'Navegación principal'})).getByRole('button',{name:'Mi barrio'}))
+  const publicCard=await screen.findByRole('button',{name:'Ver detalle: Luminaria de prueba'})
+  assert.ok(within(publicCard).getByText('Pendiente',{exact:true}).closest('.claim-status-badge')?.classList.contains('status-red'))
 })

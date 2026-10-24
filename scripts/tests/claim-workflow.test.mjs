@@ -12,7 +12,7 @@ after(async()=>{await server?.close()})
 const user='33000000-0000-4000-8000-000000000001',id='23000000-0000-4000-8000-000000000001'
 const category={id:'10000000-0000-4000-8000-000000000001',slug:'alumbrado',name:'Alumbrado'}
 const draft={title:'Título de prueba',categoryId:category.id,description:'Descripción ficticia de prueba',address:'Prueba 123',neighborhood:'Centro'}
-const own={id,author_id:user,category_id:category.id,title:draft.title,description:draft.description,address:draft.address,neighborhood:draft.neighborhood,status:'publicado',moderation_status:'pendiente',is_demo:true,created_at:'2026-10-24T12:00:00+00:00',category}
+const own={id,author_id:user,category_id:category.id,title:draft.title,description:draft.description,address:draft.address,neighborhood:draft.neighborhood,status:'publicado',moderation_status:'aprobado',is_demo:true,created_at:'2026-10-24T12:00:00+00:00',category}
 const scope=()=>({userId:user,signal:new AbortController().signal,isCurrent:()=>true})
 const defer=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve}}
 const photo=()=>new File([new Uint8Array([255,216,255,0])],'private-original-name.jpg',{type:'image/jpeg'})

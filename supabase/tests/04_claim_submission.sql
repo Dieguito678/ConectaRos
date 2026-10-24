@@ -20,7 +20,7 @@ select set_config('request.jwt.claim.sub','33000000-0000-4000-8000-000000000001'
 select public.submit_demo_claim('23000000-0000-4000-8000-000000000001','33000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','  Título válido  ','Descripción de prueba','Dirección 123','Centro');
 select public.submit_demo_claim('23000000-0000-4000-8000-000000000001','33000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','Título válido','Descripción de prueba','Dirección 123','Centro');
 select pg_temp.assert_true((select count(*)=1 from public.claims where author_id=auth.uid()),'idempotent create');
-select pg_temp.assert_true((select author_id=auth.uid() and moderation_status='pendiente' and status='publicado' and is_demo and entity_id is null and title='Título válido' from public.claims where id='23000000-0000-4000-8000-000000000001'),'fixed server fields and trim');
+select pg_temp.assert_true((select author_id=auth.uid() and moderation_status='aprobado' and status='publicado' and is_demo and entity_id is null and title='Título válido' from public.claims where id='23000000-0000-4000-8000-000000000001'),'fixed server fields and trim');
 select pg_temp.assert_true((select count(*)=0 from public.point_movements),'sending does not award points');
 select pg_temp.expect_error($s$select public.submit_demo_claim('23000000-0000-4000-8000-000000000001','33000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','Otro título','Descripción de prueba','Dirección 123','Centro')$s$,'22023');
 select pg_temp.expect_error($s$select public.submit_demo_claim(gen_random_uuid(),'33000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000001','Título válido','Descripción de prueba','Dirección 123','Centro')$s$,'42501');
@@ -32,6 +32,12 @@ select pg_temp.expect_error($s$update public.claims set moderation_status='aprob
 select pg_temp.expect_error($s$insert into public.claims(category_id,title,description,address,neighborhood,status) values ('10000000-0000-4000-8000-000000000001','Título válido','Descripción de prueba','Dirección 123','Centro','resuelto')$s$,'42501');
 select pg_temp.expect_error($s$insert into public.claims(entity_id) values (gen_random_uuid())$s$,'42501');
 select pg_temp.expect_error($s$insert into public.point_movements(user_id,amount,reason,event_id) values (auth.uid(),20,'claim_validated',gen_random_uuid())$s$,'42501');
+-- Keep the preexisting historical-pending privacy/photo coverage. Only this
+-- local fixture changes state as the database owner; clients cannot do this.
+-- Automatic publication and approved photo permissions are covered in suite 05.
+reset role;
+update public.claims set moderation_status='pendiente' where id='23000000-0000-4000-8000-000000000001';
+set local role authenticated;
 select pg_temp.expect_error($s$select public.attach_own_claim_photo('23000000-0000-4000-8000-000000000001',auth.uid(),'33000000-0000-4000-8000-000000000001/23000000-0000-4000-8000-000000000001/claim/73000000-0000-4000-8000-000000000001.jpg')$s$,'P0002');
 insert into storage.objects(bucket_id,name) values ('claim-photos','33000000-0000-4000-8000-000000000001/23000000-0000-4000-8000-000000000001/claim/73000000-0000-4000-8000-000000000001.jpg');
 select public.attach_own_claim_photo('23000000-0000-4000-8000-000000000001',auth.uid(),'33000000-0000-4000-8000-000000000001/23000000-0000-4000-8000-000000000001/claim/73000000-0000-4000-8000-000000000001.jpg');

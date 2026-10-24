@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite'
 import { readdir, readFile } from 'node:fs/promises'
 import { bootstrapSql } from './lib/test-bootstrap.mjs'
+import { preparePublicationMigrationCheck, verifyPublicationMigrationCheck, verifyOptionalPublicationScript } from './lib/publication-sql-checks.mjs'
 
 // Real PostgreSQL in WASM, with minimal substitutes for hosted Auth/Storage.
 // Never connects to a project and never reads .env.local.
@@ -8,7 +9,9 @@ const db = new PGlite()
 try {
   await db.exec(bootstrapSql)
   for (const file of (await readdir('supabase/migrations')).filter(name => name.endsWith('.sql')).sort()) {
+    const existingClaims = file==='20261024000700_automatic_claim_publication.sql' ? await preparePublicationMigrationCheck(db) : null
     await db.exec(await readFile(`supabase/migrations/${file}`, 'utf8'))
+    if(existingClaims){await verifyPublicationMigrationCheck(db,existingClaims);console.log('PASS migración estructural no publica pendientes históricos')}
     console.log(`PASS migración ${file}`)
   }
   await db.exec(await readFile('supabase/seed.sql', 'utf8'))
@@ -20,6 +23,8 @@ try {
     await db.exec(await readFile(`supabase/tests/${file}`, 'utf8'))
     console.log(`PASS ${file}`)
   }
+  await verifyOptionalPublicationScript(db)
+  console.log('PASS script opcional real: preview sin cambios, aprobación selectiva, gestión intacta y sin puntos')
   console.log('Pruebas PostgreSQL locales completas. No prueba Auth/Storage HTTP ni concurrencia entre conexiones de un Supabase real.')
 } catch (error) {
   console.error(error.message)

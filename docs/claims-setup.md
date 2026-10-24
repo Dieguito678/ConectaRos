@@ -1,26 +1,47 @@
 # Crear reclamos y Mis reclamos
 
-## Entrega
+## Alcance actual
 
-- Crear un reclamo con categorías y UUID consultados en Supabase, validación de campos y una fotografía opcional. El acceso anónimo abre el login y conserva la intención mientras la página siga abierta; cancelar el acceso no vuelve a abrirlo automáticamente.
-- Reclamos propios con filtro explícito `author_id`, RLS, orden estable y páginas de 12 registros por fecha/UUID. Estados de carga, vacío, error, reintento y carga de más resultados.
-- Detalle propio con descripción, ubicación textual, fecha, moderación, gestión, foto privada e historial público permitido. No se consultan notas, derivaciones ni auditoría interna. Un ID ajeno o inexistente no se distingue mediante datos privados.
-- Refresco remoto después de crear, sin insertar filas artificialmente en Mi barrio. La consulta pública conserva `moderation_status = aprobado` y no usa datos locales de reemplazo.
-- Sin edición, borrado, apoyos, aportes, panel administrativo, mapas, premios ni integraciones oficiales.
+El módulo permite crear reclamos con categorías remotas, una fotografía opcional, envío idempotente y recuperación ante respuestas de red ambiguas. El acceso anónimo abre el login y conserva la intención mientras siga abierta la página; cancelar el acceso no lo vuelve a abrir automáticamente.
 
-Archivos principales: `src/claims/repository.ts` (consultas/RPC/Storage), `submission.ts` (envío y recuperación), `CreateClaimDialog.tsx`, `MyClaims.tsx`, `OwnClaimDetail.tsx`, `hooks.ts`, `model.ts` y su integración en `src/App.tsx`. Se reutilizan el contexto Auth y el cliente único existente; no hay dependencias nuevas.
+**Con la migración 007, un reclamo nuevo queda `moderation_status=aprobado` y `status=publicado`.** Aparece en el listado público con badge rojo **Pendiente**, que indica falta de avance de gestión. No indica una emergencia, una derivación oficial ni una validación administrativa premiada.
 
-## Migración nueva: antes de probar
+Mis reclamos consulta por `author_id` además de RLS, ordena por fecha/UUID y carga páginas de 12 registros. El detalle propio muestra descripción, ubicación textual, fecha, moderación, gestión, fotografía y el historial público permitido. No consulta notas, derivaciones ni auditoría interna. Un identificador ajeno o inexistente no expone datos privados.
 
-Las cinco migraciones anteriores ya fueron aplicadas manualmente según el contexto del proyecto. No las modifiques ni vuelvas a ejecutarlas. En SQL Editor del proyecto verificado, ejecutá **solo**:
+Al crear se refrescan las consultas remotas. Mi barrio conserva `moderation_status=aprobado`, sin insertar filas artificialmente ni usar fixtures como fallback. Los pendientes históricos, ocultos y rechazados continúan fuera de ese listado. No se agregan edición, eliminación, apoyos, aportes, panel administrativo, mapas, premios o integraciones oficiales.
+
+Archivos principales: `src/claims/repository.ts`, `submission.ts`, `CreateClaimDialog.tsx`, `MyClaims.tsx`, `OwnClaimDetail.tsx`, `hooks.ts`, `model.ts` y su integración en `src/App.tsx`. Se reutilizan Auth y el cliente único; no se crean clientes duplicados.
+
+## Migraciones: aplicar antes de probar el frontend
+
+El frontend actual requiere **001–007 aplicadas en orden**. Las migraciones anteriores se ejecutaron manualmente en SQL Editor; no se supone que el historial de la CLI esté sincronizado. No uses `db push` ni `reset` sobre el remoto y no vuelvas a ejecutar archivos aplicados.
+
+Si el proyecto ya tiene 001–006, abrí SQL Editor en el proyecto verificado y ejecutá solamente el archivo nuevo completo, incluyendo `begin` y `commit`:
 
 ```text
-supabase/migrations/20261024000600_claim_submission.sql
+supabase/migrations/20261024000700_automatic_claim_publication.sql
 ```
 
-No se ejecutó SQL remoto durante esta tarea. No ejecutes `db push` ni `reset`: el historial de la CLI no está sincronizado con el SQL Editor. Para una instalación nueva, el orden es 001 esquema → 002 políticas → 003 RPC previas → 004 Storage → 005 perfil Auth → 006 creación → seed. El seed y los datos ficticios existentes no fueron modificados.
+Para una instalación nueva:
 
-Antes de aplicar 006 en una base que pudiera tener fotos previas, inspeccioná posibles duplicados de foto principal con SQL confiable:
+```text
+001 initial_schema
+002 policies
+003 transactional_functions
+004 storage
+005 auth_profile_display_name
+006 claim_submission
+007 automatic_claim_publication
+seed.sql
+```
+
+La 006 creó la RPC idempotente original con moderación pendiente. La 007 cambia ese contrato a aprobación automática y adapta el helper de primera fotografía para aceptar el reclamo propio recién publicado. No se modifican las migraciones anteriores, no se aprueban registros históricos en bloque y no se alteran el seed ni sus UUID.
+
+La nueva versión del frontend no debe probarse contra el contrato 006 anterior: esa versión seguía creando pendientes y no permitía una primera foto después de aprobar el reclamo.
+
+### Instalaciones que aún no aplicaron 006
+
+La 006 agrega un índice único para una foto principal por reclamo. Antes de aplicarla en una base con evidencia existente, comprobá duplicados desde SQL confiable:
 
 ```sql
 select claim_id, count(*)
@@ -29,34 +50,48 @@ where contribution_id is null
 group by claim_id having count(*) > 1;
 ```
 
-La nueva restricción permite una foto principal por reclamo. Si devuelve filas, detenete e inspeccioná esos datos; no borres evidencia para forzar la migración. El archivo es transaccional y no limpia tablas, buckets ni objetos.
+Si aparecen filas, detenete e inspeccionalas. No borres evidencia para forzar una migración. Los archivos son transaccionales y no limpian tablas, buckets u objetos.
 
-### Contratos de las nuevas RPC
+### Publicación opcional de pendientes históricos
 
-`submit_demo_claim(p_request_id, p_expected_user, p_category_id, p_title, p_description, p_address, p_neighborhood)`:
+`supabase/scripts/publish_pending_claims.sql`, si se desea usar, es una acción administrativa **manual y separada** de las migraciones. Primero revisá su consulta de vista previa y sus filtros, elegí conscientemente qué registros publicar y recién entonces ejecutá el bloque de actualización en SQL Editor. La migración 007 no lo ejecuta. No lo incluyas en instalaciones automáticas ni lo uses para aprobar ocultos o rechazados.
 
-- `p_request_id` es un UUID estable por intento, usado como PK. Repetir el mismo intento devuelve el mismo reclamo; cambiar su contenido con el mismo UUID se rechaza. Un conflicto de autor no expone el registro.
-- `p_expected_user` es únicamente una guarda de sesión: debe coincidir con `auth.uid()`. El autor siempre lo elige el servidor a partir de `auth.uid()`, nunca del payload.
-- El servidor fija `moderation_status=pendiente`, `status=publicado`, `is_demo=true` y ningún organismo responsable. No crea movimientos de puntos.
-- Título 5–160, descripción 10–5000, dirección 3–240 y barrio 2–100, sin espacios exteriores y sin campos vacíos. Categoría existente obligatoria. El frontend también valida y usa texto libre para barrio, sin inventar un catálogo oficial.
+El script muestra primero **todos** los registros con `moderation_status='pendiente'`, ordenados por fecha/UUID; no se limita a un autor ni a `is_demo`. El UPDATE opcional está comentado en un bloque separado y usa ese mismo filtro. Si necesitás publicar solo algunos, acotá y verificá el mismo filtro en la vista previa y en el UPDATE antes de ejecutar. Ocultos y rechazados quedan excluidos.
 
-`attach_own_claim_photo(p_claim_id, p_expected_user, p_storage_path)`:
+La actualización cambia únicamente la moderación a `aprobado`. Conserva autor, organismo, `is_demo` y `claim_status`, y no crea puntos ni validación administrativa; el trigger normal sí actualizará `updated_at`. Por eso un reclamo histórico con una gestión avanzada conserva esa etapa y no necesariamente se mostrará rojo. También cambia la elegibilidad de lectura de su metadata y sus fotos bajo las políticas existentes. Conservá una revisión de las filas afectadas antes de confirmar la transacción.
 
-- Verifica sesión actual, autoría, ruta, existencia del objeto y políticas del helper/trigger existentes.
-- Reintentar la misma asociación devuelve su ID. Otra foto principal se rechaza; no se sobrescribe evidencia.
-- Si el objeto todavía no existe devuelve `P0002`, utilizado internamente para saber que primero debe subirse. No se muestran códigos, rutas ni mensajes crudos al usuario.
+## Contratos actuales
 
-Ambas RPC son `SECURITY DEFINER`, fijan `search_path`, califican los objetos y no tienen ejecución pública/anon. Solo `authenticated` puede invocarlas y sus verificaciones se repiten en el servidor. No se amplían permisos de columnas ni de lectura. Los INSERT directos anteriores mantienen sus restricciones; el formulario usa exclusivamente la nueva RPC idempotente.
+### `submit_demo_claim(...)`
 
-No cambian columnas ni enums. Se regeneraron los tipos de filas desde las migraciones locales para comprobar el contrato; los tipos de proyección/estado del módulo están en `src/claims/model.ts`. El generador actual no genera firmas de RPC; los argumentos usados son los de esta migración y se verifican con pruebas.
+Parámetros: `p_request_id`, `p_expected_user`, `p_category_id`, `p_title`, `p_description`, `p_address`, `p_neighborhood`.
 
-### Significado de demo
+- `p_request_id` es un UUID estable por intento, usado como PK. Repetir el mismo intento devuelve la misma fila; reutilizarlo con otro contenido se rechaza. Un conflicto de autor no expone el registro.
+- `p_expected_user` es una guarda contra cambios de sesión: debe coincidir con `auth.uid()`. No permite elegir autor. El servidor siempre escribe `author_id=auth.uid()`.
+- El servidor fija `aprobado`/`publicado`, `is_demo=true` y ningún organismo responsable. El cliente no elige estados privilegiados ni omite autoría.
+- La publicación no inserta movimientos de puntos ni una validación administrativa. Las reglas de puntos y sus RPC no se cambian.
+- Título 5–160, descripción 10–5000, dirección 3–240 y barrio 2–100, sin espacios exteriores y sin campos vacíos. Categoría existente obligatoria. El barrio es texto libre, no un catálogo oficial inventado.
 
-Los nuevos envíos de esta aplicación de demostración se marcan `is_demo=true`, **siempre con autor autenticado**. No reutilizan la excepción de los ejemplos antiguos sin autor. El indicador nunca permite suplantar usuarios, omitir revisión o aparecer públicamente por el simple envío. Las RPC anteriores no premian reclamos marcados de demo al validarlos/resolverlos; esta entrega tampoco habilita UI de puntos. Los UUID y datos del seed se conservan.
+### `attach_own_claim_photo(...)`
 
-## Storage
+Parámetros: `p_claim_id`, `p_expected_user`, `p_storage_path`.
 
-Se usa exclusivamente el bucket privado existente **`claim-photos`**, con sus límites de 5 MiB y MIME JPEG/PNG/WebP. No cambies su visibilidad ni desactives sus políticas. La ruta exacta de este formulario es:
+- Verifica sesión actual, autoría, ruta, existencia del objeto y el helper/trigger de asociación.
+- Para una nueva foto principal exige gestión `publicado`, moderación `aprobado` o `pendiente` histórico y ausencia de validación administrativa previa. Ocultos, rechazados y reclamos con gestión avanzada no admiten una nueva foto.
+- Repetir la misma asociación devuelve su ID mientras la moderación siga aprobada o pendiente histórica, incluso si la gestión ya avanzó. Una foto principal distinta se rechaza; no se reemplaza ni borra evidencia. Un oculto o rechazado no acepta esta RPC de asociación ni como reintento.
+- Si falta el objeto, `P0002` indica internamente que debe subirse primero. La UI no muestra rutas ni mensajes crudos del proveedor.
+
+Las RPC privilegiadas fijan `search_path`, califican objetos y no tienen ejecución pública/anon. Solo `authenticated` puede invocarlas, con comprobaciones de identidad en el servidor. La 007 revoca tanto el permiso de INSERT de tabla como los permisos de INSERT por columna sobre `claims` y retira su política de creación directa: el cliente crea exclusivamente por la RPC. No se desactiva RLS ni se amplían permisos de lectura o de columnas para resolver errores. Los permisos de aportes permanecen independientes.
+
+No se agregan columnas ni enums. Los tipos de filas existentes siguen describiendo el esquema; las proyecciones del módulo están en `src/claims/model.ts`. El generador actual no produce firmas RPC; sus argumentos se mantienen alineados con el SQL y se prueban localmente.
+
+### Registros de ejemplo
+
+Los nuevos envíos de esta aplicación de demostración mantienen `is_demo=true`, siempre con autor autenticado. La excepción de los ejemplos antiguos sin autor no se utiliza. El indicador no permite suplantar usuarios ni modificar estados administrativos; la visibilidad automática la fija la nueva RPC, no un campo oculto. La UI muestra «Ejemplo» como rótulo secundario. Los UUID y datos del seed permanecen sin cambios.
+
+## Storage: privacidad y lectura real
+
+Se utiliza el bucket existente **`claim-photos`**, que sigue siendo privado y admite JPEG, PNG o WebP de hasta 5 MiB. La ruta de este formulario es:
 
 ```text
 <auth.uid()>/<claim_id>/claim/<uuid_aleatorio>.jpg
@@ -64,56 +99,60 @@ Se usa exclusivamente el bucket privado existente **`claim-photos`**, con sus l�
 <auth.uid()>/<claim_id>/claim/<uuid_aleatorio>.webp
 ```
 
-No se utiliza el nombre original del archivo. El navegador valida MIME, tamaño y firma inicial; Storage valida MIME declarado y tamaño mediante la configuración del bucket. Eso no equivale a un análisis antivirus ni a una validación completa del contenido binario en el servidor.
+El nombre original no forma parte de la ruta. El navegador valida MIME, tamaño y firma inicial; Storage valida el MIME declarado y el tamaño configurados. Esto no equivale a antivirus ni a validación binaria completa en el servidor.
 
-Orden: **guardar reclamo → comprobar si una subida previa puede asociarse → subir si no existe → registrar asociación**. PostgreSQL y Storage no comparten transacción:
+**Bucket privado no significa que las fotos sean exclusivas del autor.** Las políticas de lectura existentes permiten al propietario o administrador acceder a sus objetos asociados y también autorizan a visitantes a leer una foto asociada cuando el reclamo está aprobado; si pertenece a un aporte, ese aporte también debe estar aprobado. La metadata de adjuntos sigue las mismas condiciones de visibilidad. Al publicar automáticamente el reclamo, una foto asociada queda dentro de ese permiso preexistente. No se amplía la política, pero tampoco se promete privacidad exclusiva del autor.
 
-1. Antes de cada envío se consulta el UUID propio del intento. Si hubo una respuesta perdida, se reconcilia con la fila. Si la consulta no puede completarse, no se lanza un INSERT a ciegas.
-2. Si aún no existe, la RPC idempotente usa el mismo UUID; una transacción previa en curso no puede crear un duplicado.
-3. La imagen usa una ruta estable por intento, `upsert:false`. Al reintentar se prueba primero la asociación, de modo que una subida exitosa con respuesta perdida no se vuelve a subir ni se reemplaza.
-4. Si falla la foto, el reclamo permanece guardado. La pantalla ofrece **Reintentar solo la imagen**, sin recrear el registro.
-5. No se compensa borrando el reclamo ni se eliminan objetos sin permiso. Las políticas existentes no permiten borrar/actualizar evidencia desde el cliente. Los objetos huérfanos requieren revisión y limpieza confiable con Storage API, fuera de este módulo.
+La UI mantiene las fotografías únicamente en el detalle propio mediante descarga autorizada y `Blob`/object URL temporal. No agrega galerías públicas, no cambia el bucket a público, no usa `getPublicUrl` y no guarda ni genera URLs firmadas. No incluyas información sensible en imágenes que puedan asociarse a un reclamo aprobado.
 
-La foto solo se muestra en el detalle propio mediante descarga autorizada y `Blob`/object URL temporal. No se guardan URLs firmadas ni se usa `getPublicUrl`. No se agregan galerías públicas ni nuevas políticas de lectura. La política previa para fotos de reclamos aprobados sigue existiendo sin ampliaciones; esta UI no la utiliza para mostrar fotos públicas.
+### Flujo y fallos parciales
 
-Un reclamo ya revisado no admite una nueva foto principal bajo las políticas vigentes. Si un administrador lo revisa entre la creación y el upload, la foto puede fallar aunque el reclamo exista. No se evita esa restricción; verificá el detalle y recurrí a un flujo de revisión futuro. Una asociación ya existente puede reconciliarse aunque el registro haya sido revisado.
+Orden: **guardar reclamo → comprobar si puede asociarse una subida anterior → subir si falta → registrar asociación**. Storage y PostgreSQL no comparten una transacción.
 
-## Probar manualmente con tu cuenta
+1. Antes de cada envío se consulta el UUID propio del intento. Una respuesta perdida se reconcilia con la fila; si la consulta falla, no se lanza un INSERT a ciegas.
+2. La RPC usa el mismo UUID. Una transacción previa aún en curso no puede generar una segunda fila para ese intento.
+3. La ruta de foto es estable y usa `upsert:false`. Primero se intenta asociar una subida anterior para no reemplazar un archivo cuya respuesta se perdió.
+4. Si falla la foto, el reclamo continúa publicado. Se ofrece **Reintentar solo la imagen**, sin recrearlo.
+5. No se compensa borrando el reclamo ni objetos sin autorización. El cliente no puede borrar o actualizar evidencia. La limpieza de huérfanos requiere un proceso confiable con Storage API, fuera de este módulo.
 
-Estas acciones escriben datos en el proyecto. **No fueron ejecutadas por el agente.** No se crearon cuentas, se enviaron correos ni se subieron fotos de prueba en esta tarea. El usuario informó previamente que registro/login ya fueron probados con Supabase; eso no demuestra que el nuevo módulo de creación/Storage funcione remotamente.
+La primera imagen puede asociarse al reclamo propio recién publicado que todavía no registra gestión ni validación administrativa. Si entre el alta y la foto cambia a un estado no permitido, la foto puede fallar sin perder el reclamo. No se elude esa protección. Una asociación ya existente de la misma ruta puede reconciliarse después de un avance de gestión, pero la RPC la rechaza si el reclamo fue ocultado o rechazado.
 
-1. Aplicá 006; verificá que Auth y las migraciones anteriores están configurados. Iniciá la app en tu origen autorizado.
-2. Sin sesión, pulsá **Crear reclamo**: abre Ingresar. Cancelalo y comprobá que no vuelve a abrirse solo. Repetí y entrá con tu cuenta: debe continuar al formulario. Recargar la página pierde la intención y los borradores en memoria; no se guarda información privada en el navegador.
-3. Comprobá que las categorías se cargan remotamente. Probá campos cortos, largos, solo espacios y falta de categoría. Los errores deben quedar junto al campo y conservar el formulario.
-4. Para un envío de prueba, usá datos ficticios y ninguna información sensible. Adjuntá opcionalmente una imagen válida de hasta 5 MiB. Probá quitarla antes de enviar y cancelar un formulario con cambios: debe pedir confirmación.
-5. Enviá. Debe mostrar **Reclamo enviado para revisión**, sin puntos. Abrilo en **Mis reclamos**: moderación pendiente y gestión registrada, con una explicación de que aún no está públicamente visible.
-6. Comprobá en **Mi barrio** que ese reclamo no aparece. El listado continúa leyendo únicamente aprobados desde Supabase.
-7. Para simular fallo de foto sin tocar permisos ni RLS, bloqueá temporalmente la solicitud de upload a Storage en DevTools después de que el reclamo se haya guardado. Debe informarse que se conserva el reclamo. Quitá el bloqueo y usá **Reintentar solo la imagen**: no debe aparecer otro reclamo ni otro adjunto.
-8. En el detalle propio comprobá la fotografía y el historial público si existe. No hay edición, eliminación ni consulta de notas internas. Un pendiente puede no tener historial visible porque la política de historial actual solo permite el de reclamos visibles.
-9. Cerrá sesión o cambiá de cuenta durante una consulta/subida. Deben desaparecer formulario, listas, detalle y object URLs de la cuenta anterior. Una petición ya enviada al servidor puede completarse para su autor original; al volver a esa cuenta, revisá Mis reclamos antes de repetir. Las continuaciones del cliente se cancelan o se descartan.
-10. Creá suficientes registros solo si necesitás probar **Cargar más** manualmente. No hace falta llenar la base para las pruebas automatizadas de paginación, que usan mocks.
+## Prueba manual con tu cuenta
 
-### Comprobar fila y adjunto desde SQL Editor
+Estas acciones escriben datos. **No fueron ejecutadas por el agente.** No se crearon cuentas, enviaron correos, crearon reclamos ni subieron fotos de prueba remotos. El usuario informó haber probado registro/login previamente; esto no demuestra que el nuevo contrato 007 o Storage real funcionen en el remoto.
 
-Usá el UUID de tu propio reclamo y el rol confiable de SQL Editor. No compartas rutas, cabeceras, correos o tokens en capturas:
+1. Aplicá las migraciones 001–007 que falten, sin repetir las anteriores. Comprobá Auth y las Redirect URLs, y abrí la app en un origen autorizado.
+2. Sin sesión, usá **Crear reclamo**. Debe abrir el acceso. Cancelalo: no debe volver a abrirse automáticamente. Ingresá con tu cuenta confirmada y comprobá que continúa al formulario. La recarga pierde la intención y el borrador en memoria.
+3. Verificá categorías remotas, campos cortos/largos/solo espacios y categoría obligatoria. Los errores deben conservar los valores y enfocar el campo correspondiente.
+4. Usá datos ficticios sin información sensible. Podés adjuntar una imagen válida de hasta 5 MiB, quitarla o descartar cambios con confirmación.
+5. Enviá una sola vez. El éxito debe indicar que el reclamo fue publicado; no debe pedir revisión previa ni mostrar puntos. En **Mis reclamos**, la moderación debe estar aprobada y la gestión inicial debe presentarse como **Pendiente**.
+6. Abrí **Mi barrio**, también sin sesión en otra ventana. Después del refresco real, el reclamo nuevo debe aparecer con badge rojo **Pendiente** y rótulo «Ejemplo». Esto no indica emergencia ni intervención oficial.
+7. Para probar la foto fallida, bloqueá temporalmente el upload de Storage en DevTools tras guardar el reclamo. El registro debe seguir existiendo y visible. Quitá el bloqueo y usá **Reintentar solo la imagen**: no debe duplicar reclamo ni adjunto.
+8. En el detalle propio, comprobá foto y etapa exacta «Publicado». El historial muestra solo eventos públicos realmente disponibles; no se inventa una derivación o avance por publicar.
+9. Cerrá sesión o cambiá de cuenta durante una consulta/subida. Formulario, listas, detalle y object URLs anteriores deben desaparecer. Una petición ya emitida puede completarse para el autor original; comprobá Mis reclamos antes de repetirla.
+10. Conservá un pendiente histórico, oculto o rechazado como prueba de lectura: no debe aparecer anónimamente por aplicar 007. No lo actualices como parte de la prueba salvo que decidas ejecutar el script opcional de publicación con revisión previa. Nunca lo uses para cambiar ocultos/rechazados.
+
+### Comprobar desde SQL Editor
+
+Con un UUID propio y el rol confiable del SQL Editor, sin compartir rutas ni credenciales:
 
 ```sql
 select id, author_id, title, moderation_status, status, is_demo, entity_id
 from public.claims where id = 'UUID-DEL-RECLAMO'::uuid;
 select id, claim_id, owner_id, contribution_id, storage_path
 from public.claim_attachments where claim_id = 'UUID-DEL-RECLAMO'::uuid;
-select id, bucket_id, name
-from storage.objects
+select id, bucket_id, name from storage.objects
 where bucket_id = 'claim-photos' and name in (
-  select storage_path from public.claim_attachments where claim_id = 'UUID-DEL-RECLAMO'::uuid
+  select storage_path from public.claim_attachments
+  where claim_id = 'UUID-DEL-RECLAMO'::uuid
 );
 select count(*) from public.point_movements
-where event_id = 'UUID-DEL-RECLAMO'::uuid; -- el envío no crea puntos
+where event_id = 'UUID-DEL-RECLAMO'::uuid; -- el alta no otorga puntos
 ```
 
-Debe haber una fila de reclamo, como máximo una foto principal y, si la asociación fue exitosa, el objeto correspondiente. No cambies estados para solucionar errores de upload ni concedas permisos amplios.
+Esperado: una fila con tu autor, moderación aprobada, gestión publicada, como máximo una foto principal y su objeto si la asociación funcionó. No cambies estados ni permisos para resolver un error de imagen.
 
-## Pruebas y límites de esta entrega
+## Pruebas y límites
 
 ```sh
 npm test
@@ -122,10 +161,12 @@ npm run types:db
 npm run build
 ```
 
-- **Mocks/JSDOM (50 casos del frontend):** validaciones, envío, doble clic, conciliación de resultado ambiguo, fallo/reintento de foto, object URLs, carga/vacío/error, acceso anónimo, continuación del login, descarte, filtros por autor, paginación y limpieza al cambiar de usuario/logout, junto con las pruebas previas de Auth y lectura pública. Las respuestas simuladas no prueban Auth/Storage HTTP.
-- **SQL local/PGlite:** seis migraciones, seed repetido y cuatro suites. La nueva suite verifica autoría, sesión esperada, idempotencia, categoría, estados fijos, ninguna autoaprobación/puntos, privacidad de pendientes/adjuntos y continuidad del seed público. Auth y Storage se representan con los contratos mínimos del runner, sin cuentas ni contraseñas reales.
-- **Remoto:** en el navegador se comprobó que el listado público conserva los nueve ejemplos y que Crear reclamo abre Auth y permite cancelarlo. No se escribieron datos ni se ejecutaron migraciones, `db push` o reset. No se abrió ni imprimió `.env.local`, ni se ejecutó el script `verify:supabase` que lo lee. Los tests de frontend se aislaron con `envDir:false`; la compilación usa la configuración normal de Vite. La prueba real de creación, asociación y descarga de foto queda para tu cuenta.
+Las pruebas de frontend usan mocks/JSDOM y los fixtures de revisión visual son una entrada aislada, nunca fallback de producción. Las pruebas SQL usan PostgreSQL WASM/PGlite con contratos mínimos de Auth/Storage, sin cuentas reales. Cubren autoría, idempotencia, estados fijos del contrato nuevo, ausencia de puntos, rechazo de autoasignaciones y privacidad de pendientes/ocultos/rechazados, además de reintentos, paginación y limpieza de sesión. Los resultados finales de esta entrega deben tomarse del reporte de tests, no de estas instrucciones.
 
-Limitaciones: no hay borradores persistidos ni recuperación de archivos después de cerrar el formulario/recargar. Un envío ambiguo conserva su UUID y contenido en memoria mientras el formulario permanece abierto. Si lo cerrás, comprobá Mis reclamos antes de crear otro. Después de cerrar un reclamo con imagen fallida se pierde ese archivo/reintento en memoria, no el reclamo; todavía no hay un cargador adicional desde el detalle. El historial carga hasta 100 registros públicos y no consulta tablas privadas. No se promete atomicidad entre Storage y PostgreSQL ni limpieza automática de huérfanos. Los reintentos de peticiones ya emitidas requieren la misma intención en memoria; no se guardan tokens ni borradores fuera del SDK de Auth.
+Verificación de esta entrega: **57/57 pruebas de frontend aprobadas**, `npm run build` aprobado y **siete migraciones + cinco suites SQL locales aprobadas**. El runner también prepara un pendiente antes de aplicar 007 para comprobar que la migración estructural no lo modifica. Finalmente ejecuta el archivo opcional real sobre fixtures locales: la vista previa no escribe, el bloque separado solo cambia pendientes, conserva todos los demás campos (salvo `updated_at` por su trigger), devuelve IDs/títulos, no otorga puntos y no modifica filas al repetirse.
 
-Referencias: [upload de Storage](https://supabase.com/docs/reference/javascript/storage-from-upload), [download autenticado](https://supabase.com/docs/reference/javascript/storage-from-download).
+No se ejecutaron migraciones o pruebas de escritura remotas, `db push` ni reset. La creación, el upload, la asociación y la descarga reales con el contrato 007 quedan para la prueba manual. Los tests locales y las capturas con fixtures no prueban HTTP real de Auth/Storage ni concurrencia entre conexiones de un proyecto Supabase.
+
+No hay borradores persistidos ni recuperación de archivos después de cerrar o recargar. Un envío ambiguo conserva su UUID y contenido en memoria mientras permanezca abierto. Al cerrarlo, comprobá Mis reclamos antes de crear otro. Cerrar un reclamo con foto fallida pierde el archivo/reintento en memoria, no la fila publicada; aún no hay un cargador adicional desde el detalle. El historial carga hasta 100 registros públicos, sin consultar tablas privadas. No hay atomicidad entre Storage y PostgreSQL ni limpieza automática de huérfanos.
+
+Referencias: [upload de Storage](https://supabase.com/docs/reference/javascript/storage-from-upload), [download autorizado](https://supabase.com/docs/reference/javascript/storage-from-download).

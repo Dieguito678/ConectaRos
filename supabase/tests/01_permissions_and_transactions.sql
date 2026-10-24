@@ -48,8 +48,13 @@ select pg_temp.expect_error('insert into public.user_roles values (auth.uid(), '
 select pg_temp.expect_error('insert into public.point_movements(user_id,amount,reason,event_id) values (auth.uid(),100,''claim_validated'',gen_random_uuid())', '42501');
 select pg_temp.expect_error('update public.claims set status = ''resuelto''', '42501');
 select pg_temp.expect_error('insert into public.claims(author_id,category_id,title,description,address,neighborhood) values (''30000000-0000-4000-8000-000000000002'',''10000000-0000-4000-8000-000000000001'',''Reclamo ajeno'',''Descripción ficticia de prueba'',''Prueba 123'',''Centro'')', '42501');
+select pg_temp.expect_error('insert into public.claims(category_id,title,description,address,neighborhood) values (''10000000-0000-4000-8000-000000000001'',''Alta directa bloqueada'',''Descripción ficticia para la prueba local'',''Prueba 123'',''Centro'')', '42501');
+-- Historical non-demo fixture for administrative awards, outside client grants.
+-- New client submissions use submit_demo_claim and never receive this award.
+reset role;
 insert into public.claims(category_id,title,description,address,neighborhood) values
   ('10000000-0000-4000-8000-000000000001','Reclamo de prueba propio','Descripción ficticia para la prueba local','Prueba 123','Centro');
+set local role authenticated;
 select pg_temp.expect_error('select public.review_claim((select id from public.claims where title = ''Reclamo de prueba propio''), true)', '42501');
 insert into public.claim_supports(claim_id) values ('20000000-0000-4000-8000-000000000001');
 select pg_temp.expect_error('insert into public.claim_supports(claim_id) values (''20000000-0000-4000-8000-000000000001'')', '23505');
@@ -88,8 +93,10 @@ select set_config('request.jwt.claim.sub', '30000000-0000-4000-8000-000000000004
 select public.review_contribution(id, true) from public.claim_contributions order by id;
 select public.review_contribution(id, true) from public.claim_contributions order by id;
 -- Admin is also a vecino; their own claim/contribution/business cannot be approved.
+reset role;
 insert into public.claims(category_id,title,description,address,neighborhood) values
   ('10000000-0000-4000-8000-000000000001','Reclamo del administrador','Descripción de prueba del administrador','Prueba 789','Centro');
+set local role authenticated;
 select pg_temp.expect_error('select public.review_claim((select id from public.claims where title = ''Reclamo del administrador''), true)', '42501');
 insert into public.claim_contributions(claim_id,kind,body,observed_at) values
   ('20000000-0000-4000-8000-000000000001','experiencia','Experiencia ficticia del administrador',now());

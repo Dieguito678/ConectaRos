@@ -109,7 +109,7 @@ export function createFixtureRepository(scenario: Scenario): ClaimsRepository {
       ensureCurrent(scope);await wait(scope.signal,450);ensureCurrent(scope)
       if(!rows.some(row=>row.id===id)){
         const category=fixtureCategories.find(value=>value.id===draft.categoryId)!
-        rows.unshift({...makeOwnFixture(0),id,author_id:scope.userId,title:draft.title.trim(),description:draft.description.trim(),address:draft.address.trim(),neighborhood:draft.neighborhood.trim(),category_id:category.id,category:{slug:category.slug,name:category.name},created_at:new Date().toISOString(),updated_at:new Date().toISOString()})
+        rows.unshift({...makeOwnFixture(0),id,author_id:scope.userId,title:draft.title.trim(),description:draft.description.trim(),address:draft.address.trim(),neighborhood:draft.neighborhood.trim(),category_id:category.id,category:{slug:category.slug,name:category.name},moderation_status:'aprobado',status:'publicado',created_at:new Date().toISOString(),updated_at:new Date().toISOString()})
       }
       return id
     },

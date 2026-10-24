@@ -1,6 +1,6 @@
 # Diseño de ConectaRos
 
-El rediseño conserva el cliente único de Supabase, las consultas remotas, el flujo de Auth y el módulo de reclamos. No requiere migraciones, dependencias nuevas ni cambios remotos. Las migraciones y configuraciones pendientes de entregas previas siguen documentadas en las guías de Auth y reclamos.
+El rediseño conserva el cliente único de Supabase, las consultas remotas, el flujo de Auth y el módulo de reclamos. El cambio visual original no requirió migraciones. La actualización posterior de publicación automática sí requiere **001–007 aplicadas antes de probar el frontend actual**: consultá [la guía de reclamos](claims-setup.md). No se aplicaron cambios remotos desde esta entrega.
 
 ## Identidad y componentes
 
@@ -27,7 +27,11 @@ La etiqueta secundaria «Ejemplo» depende de `is_demo`; el rediseño no altera 
 | Aprobado + en_revision, presentado, recepcion_confirmada, en_tratamiento o solucion_informada | En proceso | Ámbar |
 | Aprobado + resuelto | Resuelto | Verde |
 
-El detalle aprobado muestra la etapa exacta: Publicado, En revisión, Presentado, Recepción confirmada, En tratamiento, Solución informada o Resuelto. «Solución informada» permanece ámbar. El detalle pendiente explica que el reclamo está siendo revisado antes de compartirlo, sin prometer plazos. El rojo de gestión no indica una emergencia.
+El detalle aprobado muestra la etapa exacta: Publicado, En revisión, Presentado, Recepción confirmada, En tratamiento, Solución informada o Resuelto. «Solución informada» permanece ámbar. Desde 007, los nuevos reclamos nacen aprobados/publicados: se ven rojos como «Pendiente» de gestión, sin revisión previa prometida, puntos ni derivación oficial. El detalle de un pendiente histórico conserva la explicación de revisión sin prometer plazos. El rojo de gestión no indica una emergencia.
+
+La publicación automática no aprueba pendientes históricos en bloque ni muestra ocultos/rechazados. El script opcional `supabase/scripts/publish_pending_claims.sql` es una decisión manual separada de las migraciones, con vista previa y revisión del filtro antes de actualizar datos.
+
+Las fotografías continúan en el detalle propio de la UI, con descarga autorizada y object URLs temporales. El bucket sigue privado, pero las políticas existentes autorizan lectura de fotos asociadas a reclamos aprobados; no debe presentarse como almacenamiento exclusivo del autor. No se agregan galerías públicas, URLs firmadas ni permisos nuevos de lectura.
 
 ## Revisión local
 

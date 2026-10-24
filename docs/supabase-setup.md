@@ -2,7 +2,7 @@
 
 ## Estado comprobado
 
-El frontend consulta Supabase usando las variables de `.env.local`, revisadas sin imprimir sus valores. La primera comprobación recibió `404 / PGRST205`. La comprobación posterior del 24/10/2026, durante la entrega de Auth, recibió **HTTP 200 con los nueve registros del seed y nueve categorías**. La lectura pública está verificada; el agente no aplicó las migraciones remotas. Para Auth, aplicá la nueva quinta migración y revisá [auth-setup.md](auth-setup.md).
+El frontend consulta Supabase con su configuración local. Como antecedente, la primera comprobación recibió `404 / PGRST205` y una posterior del 24/10/2026 recibió **HTTP 200 con los nueve registros del seed y nueve categorías**. Estos son resultados históricos, no una comprobación remota de la publicación automática. La entrega actual no inspeccionó el entorno remoto ni aplicó SQL. Para el frontend actual deben estar aplicadas **001–007**; revisá [Auth](auth-setup.md) y [creación/publicación de reclamos](claims-setup.md).
 
 No se dispone de MCP de Supabase, CLI autenticada ni acceso administrativo. No se pudo inspeccionar el catálogo remoto, verificar propiedad administrativa, aplicar migraciones ni cargar el seed remoto. La clave pública no permite hacerlo. No se solicitaron contraseñas ni claves secretas.
 
@@ -21,7 +21,7 @@ select id, public, file_size_limit, allowed_mime_types
 from storage.buckets where id = 'claim-photos';
 ```
 
-3. Es una instalación inicial: requiere que no existan las tablas/tipos/funciones de ConectaRos, el esquema `private` ni el bucket `claim-photos`. Si hay objetos coincidentes, detenete y prepará una migración compatible después de inspeccionarlos. Los archivos fallan ante conflictos, sin reemplazar objetos, borrar tablas ni resetear datos. No aplicar sobre otro producto que use `private`.
+3. Para una instalación desde cero, los archivos iniciales requieren que no existan las tablas/tipos/funciones de ConectaRos, el esquema `private` ni el bucket `claim-photos`. Si hay objetos coincidentes sin un historial conocido, detenete e inspeccionalos. No apliques la instalación inicial sobre otro producto que use `private`. En una instalación existente con 001–006 aplicadas, no las repitas: la 007 reemplaza expresamente las funciones de creación y asociación conocidas, sin resetear ni borrar datos.
 4. Creá una consulta por archivo, pegá **todo su contenido** (incluyendo `begin`/`commit`) y ejecutalos una sola vez, en este orden. Si uno falla, no avances:
 
 | Orden | Archivo | Contenido |
@@ -31,9 +31,13 @@ from storage.buckets where id = 'claim-photos';
 | 3 | `supabase/migrations/20261024000300_transactional_functions.sql` | RPC autorizadas y transaccionales |
 | 4 | `supabase/migrations/20261024000400_storage.sql` | Bucket privado y controles de fotos |
 | 5 | `supabase/migrations/20261024000500_auth_profile_display_name.sql` | Nombre visible validado al crear el perfil Auth |
-| 6 | `supabase/seed.sql` | Categorías y nueve reclamos ficticios |
+| 6 | `supabase/migrations/20261024000600_claim_submission.sql` | Creación y adjunto idempotentes |
+| 7 | `supabase/migrations/20261024000700_automatic_claim_publication.sql` | Alta aprobada/publicada y primera foto compatible |
+| 8 | `supabase/seed.sql` | Categorías y nueve reclamos ficticios |
 
 Cada archivo es una transacción. Si queda una transacción abortada tras un error, ejecutá `rollback;` antes de investigar y reintentar ese archivo. SQL Editor no registra automáticamente el historial de la CLI: conservá un registro de archivos ejecutados. Antes de usar luego `supabase db push`, reconciliá el historial con `supabase migration repair` de acuerdo con lo realmente aplicado. Nunca ejecutes un reset remoto.
+
+Si 001–006 ya están aplicadas manualmente, ejecutá solo la nueva 007 antes de probar el frontend actual. El script opcional `supabase/scripts/publish_pending_claims.sql` es independiente: contiene una vista previa de todos los pendientes y un UPDATE comentado para aprobación manual consciente. No es parte de la migración ni del seed; no se ejecuta automáticamente y preserva etapas de gestión, autores y datos existentes.
 
 5. En Settings → API, mantené `public` expuesto y **no expongas `private`**. No desactives RLS. La última migración recarga PostgREST; si la API todavía no ve el esquema, ejecutá:
 
@@ -76,7 +80,7 @@ No existe RPC de autoasignación. `user_metadata` no otorga autoridad. Todas las
 
 - `profiles`: privado para su titular, sin correos ni contraseñas. No hay directorio público de perfiles. Los visitantes tampoco reciben UUID de autores. `user_roles` solo se lee para la propia cuenta y no admite escritura del cliente.
 - `categories`, `entities` y `entity_categories`: directorios públicos mantenidos con SQL confiable. Los organismos no son cuentas.
-- `claims`: autor, categoría, organismo opcional, ubicación y fechas. Estado operativo y moderación son independientes. Un reclamo nace `publicado`/`pendiente`; validar permite publicarlo y premiarlo, no resolverlo. Solo los aprobados son visibles al visitante.
+- `claims`: autor, categoría, organismo opcional, ubicación y fechas. Estado operativo y moderación son independientes. Los defaults históricos de tabla siguen siendo `publicado`/`pendiente`, pero desde 007 el cliente no tiene INSERT directo y su RPC fija **`publicado`/`aprobado`** para cada nuevo reclamo. Publicar no equivale a validar, premiar, resolver o derivar. Solo los aprobados son visibles al visitante; pendientes históricos, ocultos y rechazados se conservan sin publicarse por aplicar la migración.
 - Los reclamos y aportes no se editan directamente: las correcciones se realizan con nuevos aportes sujetos a revisión. Las columnas sensibles no tienen permisos de escritura del cliente, tampoco para usuarios administradores.
 - `claim_supports`: un apoyo por usuario/reclamo, visible en forma agregada. `claim_contributions`: experiencias, evidencia y actualizaciones inmutables con revisión separada.
 - `claim_referrals`: números de trámite, canales, comprobantes y notas internas, accesibles solo a administradores. `receipt_reference` es una referencia interna, nunca un enlace público a comprobantes. `claim_history` contiene solo estados y notas expresamente públicas.
@@ -136,11 +140,11 @@ Bucket privado `claim-photos`, máximo 5 MiB (5.242.880 bytes), MIME JPEG/PNG/We
 <auth.uid()>/<claim_id>/<contribution_id>/<file_uuid>.webp
 ```
 
-Subir primero con Storage y luego insertar `claim_attachments`. Se comprueban usuario, propiedad, reclamo/aporte y existencia del objeto. La foto de un reclamo se carga antes de su revisión; un aporte nuevo permite evidencia adicional en un reclamo visible. La asociación se bloquea contra la revisión simultánea. El cliente no puede reemplazar, borrar o sobrescribir evidencia, incluso si otras políticas de Storage fueran permisivas.
+Subir primero con Storage y luego asociar mediante la RPC de foto. Se comprueban usuario, propiedad, reclamo/aporte y existencia del objeto. Desde 007, una primera foto principal puede seguir al alta propia aprobada/publicada si aún no tiene validación administrativa ni gestión avanzada; los pendientes históricos conservan ese permiso inicial. Ocultos/rechazados no admiten nuevas fotos. La asociación se serializa con los cambios del reclamo y el cliente no puede reemplazar, borrar o sobrescribir evidencia.
 
-Las lecturas exigen una asociación con reclamo/aporte visibles, salvo propietario o administrador. Preferir descargas autorizadas de Storage con sesión actual; no usar `getPublicUrl`. **Una URL firmada ya emitida puede seguir válida hasta vencer aunque se oculte un reclamo**. La app no emite URLs firmadas; evitarlas permite revocar nuevas lecturas de inmediato. Los objetos huérfanos deben limpiarse mediante un proceso confiable de Storage API, no borrando filas manualmente.
+Las lecturas exigen una asociación con reclamo/aporte visibles, salvo propietario o administrador. **El bucket privado no ofrece exclusividad del autor:** las políticas existentes también autorizan a visitantes a leer fotos asociadas a reclamos aprobados y, cuando corresponde, a aportes aprobados. La aprobación automática entra en ese permiso de lectura preexistente; no se amplían políticas ni se crea una galería pública. La UI usa descargas autorizadas y object URLs temporales en el detalle propio, sin `getPublicUrl`. Una URL firmada ya emitida puede seguir válida hasta vencer aunque se oculte un reclamo; la app no las emite. Los huérfanos requieren limpieza confiable con Storage API, no borrado manual de metadata.
 
-Los tests verifican configuración y políticas SQL, no el rechazo HTTP de MIME/tamaño incorrectos ni el contenido binario. Falta probar Storage real antes de habilitar un cargador de fotos; ese cargador no está implementado.
+Los tests locales verifican configuración y políticas SQL, no el rechazo HTTP de MIME/tamaño incorrectos ni el contenido binario. El cargador existe en el formulario de creación, pero Storage real y la publicación remota con 007 deben probarse manualmente con una cuenta elegida por el usuario.
 
 ## Seed y tipos
 
@@ -157,9 +161,9 @@ npm run types:db
 npm run build
 ```
 
-`test:db` ejecuta las cinco migraciones, carga el seed dos veces y prueba RLS/RPC/Storage y el perfil Auth con PostgreSQL WASM (PGlite), roles reales de PostgreSQL e identidades de prueba. Los fixtures se revierten. Prueba privacidad, autoría, columnas sensibles, roles, comercios, premios únicos, límite de aportes, apoyos duplicados, transiciones, resolución, saldo/stock/vigencia, idempotencia, condiciones conservadas, uso único y fotos ocultas.
+`test:db` ejecuta las migraciones versionadas hasta 007, carga el seed dos veces y prueba RLS/RPC/Storage y el perfil Auth con PostgreSQL WASM (PGlite), roles reales de PostgreSQL e identidades de prueba. Los fixtures se revierten. Además de las reglas previas, la actualización comprueba publicación automática por RPC, autoría fija, ausencia de puntos por el alta, primera foto compatible y exclusión pública de pendientes históricos/ocultos/rechazados. Los resultados de esta entrega deben tomarse del reporte final de tests.
 
-Auth y Storage se representan con contratos mínimos en el runner: no se prueba su HTTP real, JWT ni cuentas remotas. El frontend tiene 31 pruebas con respuestas controladas, incluyendo formularios, sesión y lectura pública. La lectura remota de los nueve reclamos se comprobó aparte por REST; el recorrido real de Auth sigue pendiente según [su guía](auth-setup.md).
+Auth y Storage se representan con contratos mínimos en el runner: no se prueba su HTTP real, JWT ni cuentas remotas. El frontend usa respuestas controladas para formularios, sesión, envío, reintentos, paginación y lectura pública. La lectura REST histórica de los nueve ejemplos no verifica la publicación automática ni Storage actuales; esta entrega no repitió conexiones remotas y requiere la prueba manual de [claims-setup.md](claims-setup.md).
 
 ### Concurrencia con dos conexiones
 
