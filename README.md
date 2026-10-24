@@ -1,64 +1,60 @@
 # ConectaRos
 
-Demo responsive de una plataforma barrial para Rosario, creada con React, Vite, TypeScript y Tailwind CSS (plugin oficial de Vite). Preparada para integrar Supabase y desplegar en Vercel.
+Aplicación responsive para explorar reclamos urbanos de Rosario. React + Vite + TypeScript + Tailwind CSS. El listado consulta Supabase; es una demo sin integración municipal.
 
 ## Ejecutar
 
-Requiere Node.js 22.12 o superior (recomendado: Node.js 24 LTS) y npm.
+Requiere Node.js >=22.12 (recomendado: 24 LTS) y npm.
 
 ```sh
 npm ci
+```
+
+Copiá `.env.example` a `.env.local` y configurá localmente `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY`. No publiques el archivo ni uses claves secretas. Reiniciá Vite después de cambiar variables.
+
+```sh
 npm run dev
 ```
 
-Abrí la URL que muestra Vite. **No hacen falta credenciales ni archivo `.env` para ejecutar la demo.** Para la primera instalación sin lockfile se usa `npm install`; el lockfile generado se incluye para instalaciones reproducibles.
+La interfaz inicia sin configuración, pero el listado muestra un error. **No hay fallback a datos locales.** Aplicá las migraciones y el seed según [la guía de Supabase](docs/supabase-setup.md).
+
+## Estado de la integración
+
+- **Mi barrio:** consulta `claims` y categorías desde Supabase, solo con moderación aprobada. Incluye carga, error con reintento, lista vacía y filtros por categoría, barrio y grupo de estado. Las tarjetas muestran los siete estados reales; los filtros agrupan `publicado` como pendiente, `resuelto` como resuelto y los demás como en proceso.
+- Los contadores y barrios se calculan con la respuesta remota. Las categorías de navegación y la ilustración del barrio son locales. La ilustración no es un mapa real.
+- `src/data/claims.ts` queda como referencia histórica, **sin importaciones en la aplicación**. Los nueve ejemplos se insertan con `supabase/seed.sql` y se identifican con `is_demo`.
+- **Mis reclamos** y **Beneficios** siguen siendo pantallas informativas. No hay autenticación simulada. Publicación, fotos, Auth, puntos y canjes todavía no están conectados al frontend.
+- El SQL implementa roles, moderación, historial, derivaciones privadas, puntos, beneficios, canjes y Storage. Solo existirán remotamente después de aplicar las migraciones.
+- Verificación del 24/10/2026: variables locales presentes; la consulta REST recibió `404 / PGRST205` para `claims`. No se aplicó SQL ni seed remoto. **Todavía no se verificó el listado con datos remotos.**
+
+## Comprobaciones
 
 ```sh
-npm run typecheck
-npm run build
+npm test                 # Contrato de lectura: error, vacío, sin fallback, mapeo y paginación
+npm run test:db          # Migraciones, seed repetible, RLS, RPC y políticas Storage en PGlite
+npm run types:db         # Tipos de filas generados desde las migraciones locales
+npm run verify:supabase  # Consulta real usando .env.local, sin imprimir sus valores
+npm run build           # TypeScript y compilación de producción
 npm run preview
 ```
 
-`build` comprueba TypeScript y genera `dist/`. `preview` permite revisar la versión compilada localmente.
-
-## Alcance de la entrega
-
-- **Mi barrio:** nueve reclamos inventados, uno por categoría: alumbrado, residuos, baches, veredas, arbolado, agua, electricidad, gas y otros. Incluye búsqueda, filtros combinables por categoría, barrio y estado, limpieza de filtros y detalle en un diálogo que se cierra con Escape o el botón de cierre.
-- **Mis reclamos:** pantalla informativa de una función futura. No se atribuyen reclamos a una persona ni se simula una sesión.
-- **Beneficios:** pantalla informativa. No hay puntos, canjes ni beneficios disponibles.
-- Datos, direcciones y estados son ejemplos ficticios; no representan reportes o intervenciones reales. La ilustración del barrio no es un mapa geográfico.
-- No se envían reclamos, no se guardan cambios ni se realizan solicitudes a Supabase. No hay integración municipal ni con prestadores. No es un canal de emergencias.
+PGlite ejecuta PostgreSQL en WASM con contratos mínimos de Auth y Storage. No prueba servicios HTTP de Supabase ni concurrencia entre conexiones. `npm run test:concurrency` requiere un PostgreSQL local desechable vacío y `TEST_DATABASE_URL`; ver la guía.
 
 ## Estructura
 
 ```text
-public/                 Favicon local
-src/
-  components/           Tarjeta, estado e iconos de categoría
-  data/claims.ts        Datos ficticios de Rosario
-  lib/supabase.ts       Fábrica de cliente opcional, sin uso en la demo
-  types/claim.ts        Tipos y categorías
-  App.tsx               Navegación y pantallas de la demo
-  main.tsx              Entrada de React
-  styles.css            Tailwind, estilos y diseño responsive
-.env.example            Variables públicas para una integración futura
-vercel.json             Configuración de compilación y salida
+src/components/               Tarjetas y categorías
+src/hooks/useClaims.ts        Consulta, carga, cancelación, error y reintento
+src/lib/supabase.ts           Una instancia compartida de cliente
+src/lib/claims.ts             Consulta paginada y adaptación de filas
+src/types/                    Modelo de UI y filas generadas desde SQL local
+supabase/migrations/          Esquema, permisos, RPC y Storage
+supabase/seed.sql             Nueve ejemplos, sin usuarios ni puntos
+supabase/tests/               Pruebas SQL
+scripts/                      Verificación remota y pruebas locales
+docs/supabase-setup.md        Instalación y decisiones de seguridad
 ```
 
-## Supabase: próxima etapa
+## Vercel
 
-Se instalaron las dependencias y se preparó `createSupabaseClient()`. Devuelve `null` si faltan variables; la demo no la invoca y mantiene sus datos locales incluso si hay credenciales configuradas.
-
-Cuando se implemente la integración, copiá `.env.example` a `.env.local` y completá `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY`. Reiniciá Vite después de editar variables. Toda variable `VITE_` queda expuesta en el navegador: **nunca colocar claves `service_role`, secret keys ni contraseñas de base de datos**.
-
-Quedan pendientes el esquema y las migraciones de base de datos, políticas RLS por usuario, autenticación real, bucket de Storage para fotos y sus políticas de acceso, validaciones y conexión de los reclamos al backend. Configurar las variables por sí solo no activa esas funciones.
-
-## Desplegar en Vercel
-
-1. Subí el proyecto a tu repositorio e importalo en Vercel.
-2. Usá el preset **Vite**, instalación `npm ci`, compilación `npm run build` y salida `dist` (configurada en `vercel.json`).
-3. Desplegá sin variables de entorno para esta demo. En la futura integración, configurá las variables públicas de Supabase en Vercel y volvé a desplegar.
-
-La navegación actual es local dentro de React; no requiere reglas de reescritura. No se creó ningún recurso remoto ni se realizó un despliegue en esta entrega.
-
-Referencias de configuración: [Vite](https://vite.dev/guide/) y [Tailwind CSS con Vite](https://tailwindcss.com/docs/installation/using-vite).
+`vercel.json` configura Vite, `npm run build` y salida `dist`. Configurá las dos variables públicas en Vercel y recompilá al cambiarlas. La navegación no necesita reescrituras. Esta tarea no despliega ni hace push.
