@@ -1,0 +1,20 @@
+.compose-dialog { width:min(720px,calc(100% - 32px)); }
+.compose-dialog h2 { margin-top:19px; }
+.compose-notice { color:var(--color-muted); font-size:15px; line-height:1.75; margin-block:14px 8px; }
+.compose-dialog>form>.field-hint { margin-top:0; margin-bottom:24px; }
+.compose-dialog fieldset { border:0; padding:0; margin:0; min-width:0; display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+.compose-dialog .auth-field { margin:0; min-width:0; }
+.compose-dialog fieldset>.auth-field:nth-child(3),.compose-dialog .photo-field { grid-column:1/-1; }
+.compose-dialog textarea { resize:vertical; min-height:120px; }
+.photo-field { padding:18px; border:1px dashed #b5caaa; border-radius:14px; background:#f7faf3; }
+.photo-field>label { display:flex; align-items:center; gap:7px; }
+.photo-field input[type=file] { border:0; background:transparent; padding:4px 0; font-size:13px; color:var(--color-muted); border-radius:0; width:100%; min-height:44px; }
+.photo-field input[type=file]::file-selector-button { background:white; border:1px solid #cbdac1; border-radius:8px; padding:9px 12px; min-height:42px; color:var(--color-primary); font:inherit; font-weight:550; margin-right:10px; cursor:pointer; }
+.photo-preview { display:block; width:100%; max-height:250px; object-fit:contain; background:#eaf1e3; border-radius:10px; margin-top:15px; }
+.claim-photo { margin:25px 0; }.own-photo { display:block; width:100%; max-height:420px; object-fit:contain; background:#f0f4eb; border:1px solid var(--color-border); border-radius:13px; }.claim-photo figcaption { margin-top:8px; font-size:12px; color:var(--color-muted); }
+.submission-result { display:flex; flex-direction:column; align-items:flex-start; gap:15px; padding-block:25px 6px; }
+.submission-result>svg { color:#44794b; background:#ebf4e0; padding:13px; box-sizing:content-box; border-radius:17px; }
+.submission-result p { font-size:15px; line-height:1.75; color:var(--color-muted); }.submission-result>p[role=status] { color:var(--color-text); font-weight:600; }
+.submission-result p[role=alert] { padding:14px; border:1px solid #eddcb8; background:#fff8e8; border-radius:10px; color:#815e1c; }
+.discard-prompt { padding-block:24px 8px; }.discard-prompt h3 { font-size:21px; margin-bottom:12px; }.discard-prompt p { color:var(--color-muted); font-size:15px; line-height:1.75; }
+@media(max-width:640px) { .compose-dialog { width:calc(100% - 24px); }.compose-dialog fieldset{grid-template-columns:1fr;gap:18px}.compose-dialog fieldset>.auth-field:nth-child(3),.compose-dialog .photo-field{grid-column:auto}.photo-field{padding:14px}.compose-dialog textarea{min-height:110px}.own-photo{max-height:300px}.compose-notice{font-size:14px} }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Eye, EyeOff, LockKeyhole, X } from 'lucide-react'
 import { useAuth } from './AuthProvider'
 import { validateAuthFields, type AuthFields, type AuthMode, type FieldErrors } from './auth-validation'
+import { openModal } from '../lib/modal'
 
 function PasswordField({ id, label, name, error, signup }: { id: string; label: string; name: string; error?: string; signup: boolean }) {
   const [visible, setVisible] = useState(false)
@@ -17,7 +18,7 @@ function PasswordField({ id, label, name, error, signup }: { id: string; label: 
   </div>
 }
 
-export function AuthDialog({ mode, onClose, onSwitch }: { mode: AuthMode; onClose: () => void; onSwitch: (mode: AuthMode) => void }) {
+export function AuthDialog({ mode, onClose, onSwitch, onDismiss = onClose }: { mode: AuthMode; onClose: () => void; onSwitch: (mode: AuthMode) => void; onDismiss?: () => void }) {
   const { signIn, signUp, busy, loading, session, logoutUncertain } = useAuth()
   const [errors, setErrors] = useState<FieldErrors>({})
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null)
@@ -27,8 +28,8 @@ export function AuthDialog({ mode, onClose, onSwitch }: { mode: AuthMode; onClos
   const processing = busy !== null
   useEffect(() => {
     mounted.current = true
-    dialog.current?.showModal()
-    return () => { mounted.current = false; dialog.current?.close() }
+    const restoreFocus = openModal(dialog.current)
+    return () => { mounted.current = false; restoreFocus() }
   }, [])
   useEffect(() => { if (session && !busy) onClose() }, [session, busy, onClose])
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -54,27 +55,27 @@ export function AuthDialog({ mode, onClose, onSwitch }: { mode: AuthMode; onClos
     else setMessage({ error: !result.ok, text: result.message ?? 'No se pudo completar la operación.' })
   }
   return <dialog ref={dialog} className="claim-dialog auth-dialog" aria-labelledby="auth-title" aria-describedby="auth-description"
-    onCancel={event => { if (processing) event.preventDefault(); else onClose() }}
-    onClick={event => { if (!processing && event.target === event.currentTarget) onClose() }}>
-    <div className="auth-dialog-heading"><span className="outline-pill"><LockKeyhole size={14} aria-hidden="true" /> TU CUENTA EN CONECTAROS</span>
-      <button type="button" className="close-button" aria-label="Cerrar formulario de acceso" disabled={processing} onClick={onClose}><X size={22} /></button></div>
+    onCancel={event => { if (processing) event.preventDefault(); else onDismiss() }}
+    onClick={event => { if (!processing && event.target === event.currentTarget) onDismiss() }}>
+    <div className="auth-dialog-heading"><span className="auth-dialog-kicker"><LockKeyhole size={16} aria-hidden="true" /> Tu cuenta en ConectaRos</span>
+      <button type="button" className="close-button" aria-label="Cerrar formulario de acceso" disabled={processing} onClick={onDismiss}><X size={22} /></button></div>
     <h2 id="auth-title">{signup ? 'Creá tu cuenta' : 'Volvé a conectar'}</h2>
     <p id="auth-description">{signup ? 'Un primer paso para participar en tu barrio.' : 'Ingresá con tu correo y contraseña.'}</p>
     <form noValidate onSubmit={submit} aria-busy={processing}><fieldset disabled={processing || loading || logoutUncertain}>
       {signup && <div className="auth-field"><label htmlFor="auth-name">Nombre visible</label>
         <input id="auth-name" name="displayName" type="text" required autoComplete="nickname" aria-invalid={!!errors.displayName}
           aria-describedby={errors.displayName ? 'auth-name-error' : 'auth-name-hint'} />
-        {errors.displayName ? <p className="field-error" id="auth-name-error">{errors.displayName}</p> : <p className="field-hint" id="auth-name-hint">Entre 1 y 80 caracteres. No es necesario usar tu nombre completo.</p>}</div>}
+        {errors.displayName ? <p className="field-error" id="auth-name-error">{errors.displayName}</p> : <p className="field-hint" id="auth-name-hint">Así te vamos a identificar. No hace falta tu nombre completo.</p>}</div>}
       <div className="auth-field"><label htmlFor="auth-email">Correo electrónico</label>
         <input id="auth-email" name="email" type="email" required autoComplete="email" autoCapitalize="none" spellCheck={false}
           aria-invalid={!!errors.email} aria-describedby={errors.email ? 'auth-email-error' : undefined} />
         {errors.email && <p className="field-error" id="auth-email-error">{errors.email}</p>}</div>
       <PasswordField id="auth-password" name="password" label="Contraseña" error={errors.password} signup={signup} />
-      {signup && <><p className="field-hint password-hint" id="auth-password-hint">Mínimo 8 caracteres. Supabase puede exigir requisitos adicionales.</p>
+      {signup && <><p className="field-hint password-hint" id="auth-password-hint">Mínimo 8 caracteres. Evitá nombres y datos personales.</p>
         <PasswordField id="auth-repeat" name="repeatPassword" label="Repetir contraseña" error={errors.repeatPassword} signup /></>}
       <button type="submit" className="primary-button auth-submit">{processing ? 'Procesando…' : signup ? 'Crear cuenta' : 'Ingresar'}</button>
     </fieldset>{message && <div className={`auth-message ${message.error ? 'auth-message-error' : ''}`} role={message.error ? 'alert' : 'status'}><p>{message.text}</p>
-      {!message.error && signup && <p>La respuesta no confirma si se creó una cuenta nueva. Si el registro corresponde y el envío está habilitado, recibirás un enlace. Si ya tenés cuenta, podés ingresar.</p>}</div>}</form>
+      {!message.error && signup && <p>Para cuidar tu privacidad, este mensaje no confirma si el correo ya tiene una cuenta. Si corresponde, recibirás un enlace de confirmación. Si ya tenés cuenta, podés ingresar.</p>}</div>}</form>
     <p className="auth-switch">{signup ? '¿Ya tenés una cuenta?' : '¿Todavía no tenés cuenta?'} <button type="button" disabled={processing}
       onClick={() => onSwitch(signup ? 'login' : 'signup')}>{signup ? 'Ingresar' : 'Crear cuenta'}</button></p>
     <p className="auth-public-note">Podés explorar Mi barrio sin iniciar sesión.</p>

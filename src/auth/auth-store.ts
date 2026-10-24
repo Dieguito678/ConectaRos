@@ -20,7 +20,7 @@ export interface AuthState {
   logoutUncertain: boolean
 }
 export interface AuthResult { ok: boolean; message?: string; confirmationPending?: boolean }
-const noConfiguration = 'Falta una configuración válida de Supabase. Revisá las variables locales y reiniciá la aplicación.'
+const noConfiguration = 'El acceso a cuentas no está disponible en este momento. Intentá nuevamente más tarde.'
 
 // A small external store makes session races testable without a real account.
 // Credentials never enter this store's snapshot or any custom storage.
@@ -232,6 +232,7 @@ export function createAuthStore(client: SupabaseClient | null, origin: string, c
   return {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     getSnapshot,
+    getCurrentUserId: () => state.session?.user.id ?? null,
     start, signIn: (fields: AuthFields) => authenticate('login', fields),
     signUp: (fields: AuthFields) => authenticate('signup', fields), signOut,
     retryProfile: () => { void loadProfile() }, retrySession,

@@ -4,7 +4,7 @@ import { createServer } from 'vite'
 
 let server, createAuthStore, validateAuthFields, authErrorMessage, parseAuthReturn
 before(async () => {
-  server = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } })
+  server = await createServer({envDir:false, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } })
   ;({ createAuthStore } = await server.ssrLoadModule('/src/auth/auth-store.ts'))
   ;({ validateAuthFields } = await server.ssrLoadModule('/src/auth/auth-validation.ts'))
   ;({ authErrorMessage } = await server.ssrLoadModule('/src/auth/auth-errors.ts'))
@@ -87,7 +87,7 @@ test('login errors are Spanish, safe, and cover policies/network/rate limits', (
   assert.match(authErrorMessage(new TypeError('SECRET')),/conexión/)
   assert.match(authErrorMessage({status:429}),/demasiados/)
   assert.match(authErrorMessage({code:'over_email_send_rate_limit'}),/límite de envío/)
-  assert.match(authErrorMessage({code:'email_address_not_authorized'}),/SMTP/)
+  assert.match(authErrorMessage({code:'email_address_not_authorized'}),/enviar la confirmación/)
   assert.match(authErrorMessage({code:'weak_password'}),/requisitos/)
   assert.equal(authErrorMessage({message:'SECRET'}).includes('SECRET'),false)
 })

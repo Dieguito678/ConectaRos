@@ -4,7 +4,7 @@ import { createServer } from 'vite'
 
 let server, fetchClaims, toClaim, isPublicSupabaseKey
 before(async () => {
-  server = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } })
+  server = await createServer({envDir:false, server: { middlewareMode: true, hmr: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } })
   ;({ fetchClaims, toClaim } = await server.ssrLoadModule('/src/lib/claims.ts'))
   ;({ isPublicSupabaseKey } = await server.ssrLoadModule('/src/lib/supabase.ts'))
 })

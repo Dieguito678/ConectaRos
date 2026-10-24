@@ -14,5 +14,5 @@ export function useAuth() {
   if (!store) throw new Error('useAuth requiere AuthProvider')
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   return { ...state, signIn: store.signIn, signUp: store.signUp, signOut: store.signOut,
-    retryProfile: store.retryProfile, retrySession: store.retrySession, dismissNotice: store.dismissNotice }
+    retryProfile: store.retryProfile, retrySession: store.retrySession, dismissNotice: store.dismissNotice, getCurrentUserId: store.getCurrentUserId }
 }
